@@ -134,7 +134,10 @@ where
         // - If we go a full loop without making any progress, that's an error
         // - If the separator matches a 0-length match, and the parser fails,
         //   include the most recent terminator error along with the parser
-        //   parser error.
+        //   parser error. It *might* be worth doing this even if separator
+        //   is non-zero length? For example, suppose the separator is , and
+        //   the terminator is , with a peeking lookahead. It might be worth
+        //   knowing that the terminator was tried and failed there.
         loop {
             // Try to find a value. To fail to do so at this point is an
             // error, since we either just started or successfully parsed a

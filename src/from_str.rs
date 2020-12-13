@@ -10,20 +10,20 @@ use crate::parser_ext::ParserExt;
 /// # Example
 ///
 /// ```
-/// use nom::character::complete::digit1;
-/// use nom_supreme::parse_from_str;
+/// # use nom::{IResult, Err, character::complete::digit1, Parser, error::{Error, ErrorKind}};
+/// use nom_supreme::{parse_from_str, parser_ext::ParserExt};
 ///
 /// fn parse_int(input: &str) -> IResult<&str, i64> {
-///     digit1.map_res(|s| s.parse()).parse(input)
+///     digit1.map_res(|s: &str| s.parse()).parse(input)
 /// }
 ///
 /// assert_eq!(parse_int("125 abc"), Ok((" abc", 125)));
-/// assert_eq!(parse_int("abc"), Err(123));
+/// assert_eq!(parse_int("abc"), Err(Err::Error(Error{input: "abc", code: ErrorKind::Digit})));
 ///
 /// // The recognizer function determines what will be passed to `FromStr`.
 /// // in this example, it doesn't accept a leading sign, so this will fail
 /// // to parse.
-/// assert_eq!(parse_int("-125"), Err(125));
+/// assert_eq!(parse_int("-125"),  Err(Err::Error(Error{input: "-125", code: ErrorKind::Digit})));
 /// ```
 pub fn parse_from_str<'a, F, T, E>(recognizer: F) -> impl Parser<&'a str, T, E>
 where

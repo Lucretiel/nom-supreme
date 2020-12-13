@@ -63,7 +63,7 @@ impl<I> RecreateContext<I> for I {
 /// let tail = &original_input[6..];
 ///
 /// assert_eq!(
-///    ByteOffset::recreate_context(original_input, tail),
+///    ByteOffset::recreate_context(&original_input[..], tail),
 ///    ByteOffset(6),
 /// );
 /// ```
@@ -83,13 +83,13 @@ impl<I: Offset> RecreateContext<I> for ByteOffset {
 /// # Example
 ///
 /// ```
-/// use nom_supreme::final_parser::{RecombineInput, Location};
+/// use nom_supreme::final_parser::{RecreateContext, Location};
 ///
 /// let original_input = "Hello,\nWorld!\n";
 /// let tail = &original_input[9..];
 ///
 /// assert_eq!(
-///    tail.recombine_input(original_input),
+///    Location::recreate_context(original_input, tail),
 ///    Location { line: 2, column: 3 },
 /// );
 /// ```

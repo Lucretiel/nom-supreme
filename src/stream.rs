@@ -60,10 +60,14 @@ impl<R: io::Read, P> ByteStreamParser<R, P> {
     where
         P: Parser<&'a [u8], T, E>,
     {
+        // Prefill 
         if self.buf().is_empty() {
             match self.reader {
                 None => return Err(StreamingParseError::Done),
-                Some(ref mut R)
+                Some(ref mut R) => {
+                    self.head = 0;
+                    self.tail = 0;
+                }
             }
         }
     }

@@ -14,6 +14,78 @@ use nom::error::{ContextError, ErrorKind as NomErrorKind, FromExternalError, Par
 use crate::final_parser::{ExtractContext, RecreateContext};
 use crate::tag::TagError;
 
+/// Enum for generic things that can be expected by nom parsers
+///
+/// Certain nom parsers (think digit1 or space1) are "low level" in the sense
+/// that they scan for a specific character or kind of character. This enum
+/// tracks the different kinds of things that can be expected and not found
+/// at a location.
+///
+/// Printing an expectation via `Display` will only include the thing that
+/// was expected, in a form suitable for being prefixed with "expected" or
+/// suffixed with "was expected".
+///
+/// This enum is non-exhaustive; it is intended to represent everything parse
+/// errors where we know *specifically* what was expected. For instance,
+/// take_while cannot create an Expectation, because it can't meaningfully
+#[non_exhaustive]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum Expectation {
+    /// A string tag was expected.
+    Tag(&'static str),
+
+    /// A specific character was expected.
+    Char(char),
+
+    /// An ASCII letter (`[a-zA-Z]`) was expected.
+    Alpha,
+
+    /// A digit (`[0-9]`) was expected.
+    Digit,
+
+    /// A hex digit (`[0-9a-fA-F]`) was expected.
+    HexDigit,
+
+    /// An oct digit (`[0-7]`) was expected.
+    OctDigit,
+
+    /// An alphanumeric character (`[0-9a-zA-Z]`) was expected.
+    AlphaNumeric,
+
+    /// A space or tab was expected.
+    Space,
+
+    /// A space, tab, newline, or carriage return was expected.
+    Multispace,
+
+    /// "\r\n" was expected
+    CrLf,
+
+    /// Eof was expected
+    // NOTE: currently, ErrorKind::Eof is returned by both eof parsers like
+    // eof and all_consuming, as well as non-eof parsers like anychar and
+    // nom::number::*. Expectation::Eof is therefore unused for now.
+    Eof,
+}
+
+impl Display for Expectation {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match *self {
+            Expectation::Tag(tag) => write!(f, "{:?}", tag),
+            Expectation::Char(c) => write!(f, "{:?}", c),
+            Expectation::Alpha => write!(f, "an ascii letter"),
+            Expectation::Digit => write!(f, "an ascii digit"),
+            Expectation::HexDigit => write!(f, "a hexadecimal digit"),
+            Expectation::OctDigit => write!(f, "an octal digit"),
+            Expectation::AlphaNumeric => write!(f, "an ascii alphanumeric character"),
+            Expectation::Space => write!(f, "a space or tab"),
+            Expectation::Multispace => write!(f, "whitespace"),
+            Expectation::Eof => write!(f, "eof"),
+            Expectation::CrLf => write!(f, "CRLF"),
+        }
+    }
+}
+
 /// These are the different specific things that can go wrong at a particular
 /// location during a nom parse. Many of these are collected into an
 /// [`ErrorTree`]. See also [`ContextErrorKind`], which is similar, but
@@ -21,11 +93,8 @@ use crate::tag::TagError;
 ///  [`BaseErrorKind`] in an [`ErrorTree::Stack`].
 #[derive(Debug)]
 pub enum BaseErrorKind {
-    /// A string tag was expected at the location.
-    Tag(&'static str),
-
-    /// A specific character was expected at the location.
-    Char(char),
+    /// Something specific was expected.
+    Expected(Expectation),
 
     /// A nom parser failed.
     Kind(NomErrorKind),
@@ -45,8 +114,7 @@ pub enum BaseErrorKind {
 impl Display for BaseErrorKind {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match *self {
-            BaseErrorKind::Tag(tag) => write!(f, "expected {:?}", tag),
-            BaseErrorKind::Char(character) => write!(f, "expected {:?}", character),
+            BaseErrorKind::Expected(expectation) => write!(f, "expected {}", expectation),
             BaseErrorKind::External(ref err) => write!(f, "external error: \"{}\"", err),
             BaseErrorKind::Kind(kind) => write!(f, "while parsing {:?}", kind),
             BaseErrorKind::Context(context) => write!(f, "in section '{}'", context),
@@ -159,10 +227,19 @@ impl<I: Display + Debug> Error for ErrorTree<I> {}
 impl<I> ParseError<I> for ErrorTree<I> {
     /// Create a new error at the given position
     fn from_error_kind(location: I, kind: NomErrorKind) -> Self {
-        ErrorTree::Base {
-            location,
-            kind: BaseErrorKind::Kind(kind),
-        }
+        let kind = match kind {
+            NomErrorKind::Alpha => BaseErrorKind::Expected(Expectation::Alpha),
+            NomErrorKind::Digit => BaseErrorKind::Expected(Expectation::Digit),
+            NomErrorKind::HexDigit => BaseErrorKind::Expected(Expectation::HexDigit),
+            NomErrorKind::OctDigit => BaseErrorKind::Expected(Expectation::OctDigit),
+            NomErrorKind::AlphaNumeric => BaseErrorKind::Expected(Expectation::AlphaNumeric),
+            NomErrorKind::Space => BaseErrorKind::Expected(Expectation::Space),
+            NomErrorKind::MultiSpace => BaseErrorKind::Expected(Expectation::Multispace),
+            NomErrorKind::CrLf => BaseErrorKind::Expected(Expectation::CrLf),
+            kind => BaseErrorKind::Kind(kind),
+        };
+
+        ErrorTree::Base { location, kind }
     }
 
     /// Combine an existing error with a new one. This is how
@@ -187,7 +264,7 @@ impl<I> ParseError<I> for ErrorTree<I> {
     fn from_char(location: I, character: char) -> Self {
         ErrorTree::Base {
             location,
-            kind: BaseErrorKind::Char(character),
+            kind: BaseErrorKind::Expected(Expectation::Char(character)),
         }
     }
 
@@ -249,7 +326,7 @@ impl<I> TagError<I, &'static str> for ErrorTree<I> {
     fn from_tag(location: I, tag: &'static str) -> Self {
         ErrorTree::Base {
             location,
-            kind: BaseErrorKind::Tag(tag),
+            kind: BaseErrorKind::Expected(Expectation::Tag(tag)),
         }
     }
 }

@@ -5,11 +5,10 @@
 use std::convert::Infallible;
 
 use nom::{
-    error::{append_error, ErrorKind, FromExternalError, ParseError},
+    error::{append_error, ErrorKind::SeparatedNonEmptyList, FromExternalError, ParseError},
     Err::{Error, Failure, Incomplete},
     Parser,
 };
-use ErrorKind::Many1;
 
 fn make_infallible<A, B>(
     mut func: impl FnMut(A, B) -> A,
@@ -97,7 +96,7 @@ where
     ParseErr: ParseError<Input> + FromExternalError<Input, FoldErr>,
 {
     parse_separated_terminated_impl(parser, separator, terminator, init, fold, |input, err| {
-        ParseErr::from_external_error(input, Many1, err)
+        ParseErr::from_external_error(input, SeparatedNonEmptyList, err)
     })
 }
 
@@ -144,7 +143,9 @@ where
             // separator.
             let (tail, value) = match parser.parse(input.clone()) {
                 Ok(success) => success,
-                Err(err) => break Err(err.map(move |err| append_error(input, Many1, err))),
+                Err(err) => {
+                    break Err(err.map(move |err| append_error(input, SeparatedNonEmptyList, err)))
+                }
             };
 
             accum = fold(accum, value).map_err(|err| Error(build_error(input, err)))?;
@@ -160,7 +161,9 @@ where
                 Err(Error(err)) => err,
 
                 // Other kinds of errors should be returned immediately.
-                Err(Failure(err)) => break Err(Failure(ParseErr::append(input, Many1, err))),
+                Err(Failure(err)) => {
+                    break Err(Failure(ParseErr::append(input, SeparatedNonEmptyList, err)))
+                }
                 Err(Incomplete(n)) => break Err(Incomplete(n)),
             };
 
@@ -171,11 +174,13 @@ where
                 Err(Error(err)) => {
                     break Err(Error(append_error(
                         input,
-                        Many1,
+                        SeparatedNonEmptyList,
                         ParseErr::or(err, term_err),
                     )))
                 }
-                Err(Failure(err)) => break (Err(Failure(append_error(input, Many1, err)))),
+                Err(Failure(err)) => {
+                    break (Err(Failure(append_error(input, SeparatedNonEmptyList, err))))
+                }
             };
 
             input = tail;

@@ -4,6 +4,11 @@ version = "0.1.0"
 authors = ["Nathan West <Lucretiel@gmail.com>"]
 edition = "2018"
 
+readme = "README.md"
+license = "MPL-2.0"
+description = "A collection of excellent utilities for nom"
+repository = "https://github.com/Lucretiel/nom-supreme"
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
@@ -12,7 +17,6 @@ indent_write = "2.0.0"
 joinery = "2.0.0"
 memchr = "2.3.4"
 nom = "6.0.1"
-thiserror = "1.0.22"
 
 [dev-dependencies]
 cool_asserts = "1.0.2"

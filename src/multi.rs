@@ -6,8 +6,10 @@ use std::convert::Infallible;
 
 use nom::{
     error::{append_error, ErrorKind, FromExternalError, ParseError},
-    Err, Parser,
+    Err::{Error, Failure, Incomplete},
+    Parser,
 };
+use ErrorKind::Many1;
 
 fn make_infallible<A, B>(
     mut func: impl FnMut(A, B) -> A,
@@ -95,7 +97,7 @@ where
     ParseErr: ParseError<Input> + FromExternalError<Input, FoldErr>,
 {
     parse_separated_terminated_impl(parser, separator, terminator, init, fold, |input, err| {
-        ParseErr::from_external_error(input, ErrorKind::Many1, err)
+        ParseErr::from_external_error(input, Many1, err)
     })
 }
 
@@ -128,49 +130,50 @@ where
     move |mut input: Input| {
         let mut accum = init();
 
+        // TODO: various kinds of 0-length tracking:
+        // - If we go a full loop without making any progress, that's an error
+        // - If the separator matches a 0-length match, and the parser fails,
+        //   include the most recent terminator error along with the parser
+        //   parser error.
         loop {
             // Try to find a value. To fail to do so at this point is an
             // error, since we either just started or successfully parsed a
             // separator.
-            let (tail, value) = parser
-                .parse(input.clone())
-                .map_err(|err| err.map(|err| append_error(input.clone(), ErrorKind::Many1, err)))?;
+            let (tail, value) = match parser.parse(input.clone()) {
+                Ok(success) => success,
+                Err(err) => break Err(err.map(move |err| append_error(input, Many1, err))),
+            };
 
-            // Execute the fold
-            accum = fold(accum, value).map_err(|err| Err::Error(build_error(input, err)))?;
-
+            accum = fold(accum, value).map_err(|err| Error(build_error(input, err)))?;
             input = tail;
 
             // Try to find a terminator; if we found it, we're done.
-            let terminator_err = match terminator.parse(input.clone()) {
+            let term_err = match terminator.parse(input.clone()) {
                 // We found a terminator, so we're done
                 Ok((tail, _)) => break Ok((tail, accum)),
 
                 // No terminator. Keep track of the error in case we also fail
                 // to find a separator.
-                Err(Err::Error(err)) => err,
+                Err(Error(err)) => err,
 
                 // Other kinds of errors should be returned immediately.
-                Err(Err::Failure(err)) => {
-                    break Err(Err::Failure(ParseErr::append(input, ErrorKind::Many1, err)))
-                }
-                Err(Err::Incomplete(n)) => break Err(Err::Incomplete(n)),
+                Err(Failure(err)) => break Err(Failure(ParseErr::append(input, Many1, err))),
+                Err(Incomplete(n)) => break Err(Incomplete(n)),
             };
 
             // No terminator, so instead try to find a separator
-            let (tail, _) = separator
-                .parse(input.clone())
-                .map_err(move |err| match err {
-                    Err::Incomplete(n) => Err::Incomplete(n),
-                    Err::Error(separator_err) => Err::Error(append_error(
+            let tail = match separator.parse(input.clone()) {
+                Ok((tail, _)) => tail,
+                Err(Incomplete(n)) => break Err(Incomplete(n)),
+                Err(Error(err)) => {
+                    break Err(Error(append_error(
                         input,
-                        ErrorKind::Many1,
-                        ParseErr::or(separator_err, terminator_err),
-                    )),
-                    Err::Failure(err) => {
-                        Err::Failure(ParseErr::append(input, ErrorKind::Many1, err))
-                    }
-                })?;
+                        Many1,
+                        ParseErr::or(err, term_err),
+                    )))
+                }
+                Err(Failure(err)) => break (Err(Failure(append_error(input, Many1, err)))),
+            };
 
             input = tail;
         }

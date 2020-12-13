@@ -45,13 +45,6 @@ impl<R, P> ByteStreamParser<R, P> {
         self.buffer.copy_within(self.head..self.tail, 0);
         self.head = 0;
         self.tail = size;
-        
-    }
-
-    /// Fill the buffer. Loop read calls until the buffer is full or the reader
-    /// is empty.
-    fn fill_buffer(&mut self) -> io::Error<()> {
-        match self
     }
 }
 
@@ -60,7 +53,7 @@ impl<R: io::Read, P> ByteStreamParser<R, P> {
     where
         P: Parser<&'a [u8], T, E>,
     {
-        // Prefill 
+        // Prefill
         if self.buf().is_empty() {
             match self.reader {
                 None => return Err(StreamingParseError::Done),

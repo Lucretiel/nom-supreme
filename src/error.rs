@@ -86,6 +86,8 @@ impl Display for Expectation {
     }
 }
 
+// TODO: Split BaseErrorKind into two separate types: one for actual base
+// errors, which live at the leaves of the tree, and one for
 /// These are the different specific things that can go wrong at a particular
 /// location during a nom parse. Many of these are collected into an
 /// [`ErrorTree`]. See also [`ContextErrorKind`], which is similar, but
@@ -131,8 +133,12 @@ impl Display for BaseErrorKind {
 /// provided by [`context`][nom::error::context]), or a list of alternatives
 /// that were all tried individually and all failed.
 ///
-/// In general, the design goal for this type is to discard as little
-/// information as possible.
+/// In general, the design goal for this type is to discard as little useful
+/// information as possible. That being said, many [`nom::ErrorKind`] variants
+/// add very little useful contextual information to error traces; for example,
+/// [`ErrorKind::Alt`] doesn't add any interesting context to an
+/// [`ErrorTree::Alt`], and its presence in a stack precludes merging together
+/// adjacent sets of [`ErrorTree::Alt`] siblings
 ///
 /// [`VerboseError`]: nom::error::VerboseError
 #[derive(Debug)]
@@ -162,7 +168,7 @@ pub enum ErrorTree<I> {
     // TODO: in a future version of nom-supreme, elaborate on the specific
     // type combinations here. For instance:
     // - Alt can only contain Stack or Base
-    // - Stack has a single Base or Alt, followed by a series of constexts
+    // - Stack has a single Base or Alt, followed by a series of contexts
     //   (Context or Kind)
 }
 
@@ -209,8 +215,6 @@ impl<I: Display> Display for ErrorTree<I> {
         match self {
             ErrorTree::Base { kind, location } => write!(f, "{} at {:#}", kind, location),
             ErrorTree::Stack(stack) => {
-                writeln!(f, "trace:")?;
-                let mut f = IndentWriter::new("  ", f);
                 write!(f, "{}", stack.iter().rev().join_with(",\n"))
             }
             ErrorTree::Alt(siblings) => {
@@ -243,11 +247,13 @@ impl<I> ParseError<I> for ErrorTree<I> {
     }
 
     /// Combine an existing error with a new one. This is how
-    /// error context is accumulated when backtracing. "other" is the orignal
+    /// error context is accumulated when backtracing. "other" is the original
     /// error, and the inputs new error from higher in the call stack.
     fn append(input: I, kind: NomErrorKind, other: Self) -> Self {
         let stack = cascade! {
             match other {
+                // Don't create a stack of [ErrorKind::Alt, ErrorTree::Alt]
+                alt @ ErrorTree::Alt(..) if kind == NomErrorKind::Alt => return alt,
                 ErrorTree::Stack(stack) => stack,
                 err => cascade! {
                     Vec::with_capacity(2);

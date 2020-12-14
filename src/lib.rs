@@ -27,7 +27,6 @@ pub mod final_parser;
 mod from_str;
 pub mod multi;
 pub mod parser_ext;
-//pub mod stream;
 pub mod tag;
 
 pub use from_str::parse_from_str;

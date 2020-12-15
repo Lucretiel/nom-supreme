@@ -14,7 +14,7 @@ use crate::parser_ext::ParserExt;
 /// use nom_supreme::{parse_from_str, parser_ext::ParserExt};
 ///
 /// fn parse_int(input: &str) -> IResult<&str, i64> {
-///     digit1.map_res(|s: &str| s.parse()).parse(input)
+///     parse_from_str(digit1).parse(input)
 /// }
 ///
 /// assert_eq!(parse_int("125 abc"), Ok((" abc", 125)));

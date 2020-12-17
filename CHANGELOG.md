@@ -1,5 +1,13 @@
 # Changelog
 
+## Unpublished
+
+## 0.1.4
+
+### Added
+
+- `.peek()` combinator to `ParserExt`
+
 ## 0.1.3
 
 No code changes

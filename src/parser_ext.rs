@@ -200,6 +200,16 @@ pub trait ParserExt<I, O, E>: Parser<I, O, E> + Sized {
     {
         self.delimited_by(delimiter.clone(), delimiter)
     }
+
+    /// Make this parser peeking: it runs normally but consumes no input
+    #[inline]
+    #[must_use = "Parsers do nothing nothing used"]
+    fn peek<F>(self) -> Peek<Self>
+    where
+        I: Clone,
+    {
+        Peek { parser: self }
+    }
 }
 
 impl<I, O, E, P> ParserExt<I, O, E> for P where P: Parser<I, O, E> {}
@@ -437,6 +447,8 @@ where
 /// Parser which runs a fallible mapping function on the output of the
 /// subparser. Any errors returned by the mapping function are transformed
 /// into a parse error.
+///
+#[derive(Debug, Clone, Copy)]
 pub struct MapRes<P, F, O, E2> {
     parser: P,
     func: F,
@@ -459,5 +471,23 @@ where
             .map_err(move |err| {
                 NomErr::Error(E::from_external_error(input, NomErrorKind::MapRes, err))
             })
+    }
+}
+
+/// Parser which runs a subparser but doesn't consume any input
+#[derive(Debug, Clone, Copy)]
+pub struct Peek<P> {
+    parser: P,
+}
+
+impl<I, O, E, P> Parser<I, O, E> for Peek<P>
+where
+    P: Parser<I, O, E>,
+    I: Clone,
+{
+    fn parse(&mut self, input: I) -> nom::IResult<I, O, E> {
+        self.parser
+            .parse(input.clone())
+            .map(|(_, value)| (input, value))
     }
 }

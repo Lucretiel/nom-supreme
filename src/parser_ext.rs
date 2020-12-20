@@ -203,12 +203,27 @@ pub trait ParserExt<I, O, E>: Parser<I, O, E> + Sized {
 
     /// Make this parser peeking: it runs normally but consumes no input
     #[inline]
-    #[must_use = "Parsers do nothing nothing used"]
-    fn peek<F>(self) -> Peek<Self>
+    #[must_use = "Parsers do nothing unless used"]
+    fn peek(self) -> Peek<Self>
     where
         I: Clone,
     {
         Peek { parser: self }
+    }
+
+    /// Make this parser a negative lookahead: it will succeed if the subparser
+    /// fails, and fail if the subparser succeeds.
+    #[inline]
+    #[must_use = "Parsers do nothing unless used"]
+    fn not(self) -> Not<Self, O>
+    where
+        I: Clone,
+        E: ParseError<I>,
+    {
+        Not {
+            parser: self,
+            phantom: PhantomData,
+        }
     }
 }
 
@@ -489,5 +504,28 @@ where
         self.parser
             .parse(input.clone())
             .map(|(_, value)| (input, value))
+    }
+}
+
+/// Parser which returns failure if the subparser succeeds, and succeeds if the
+/// subparser fails.
+#[derive(Debug, Clone, Copy)]
+pub struct Not<P, O> {
+    parser: P,
+    phantom: PhantomData<O>,
+}
+
+impl<I, O, E, P> Parser<I, (), E> for Not<P, O>
+where
+    P: Parser<I, O, E>,
+    I: Clone,
+    E: ParseError<I>,
+{
+    fn parse(&mut self, input: I) -> nom::IResult<I, (), E> {
+        match self.parser.parse(input.clone()) {
+            Ok(..) => Err(NomErr::Error(E::from_error_kind(input, NomErrorKind::Not))),
+            Err(NomErr::Error(..)) => Ok((input, ())),
+            Err(err) => Err(err),
+        }
     }
 }

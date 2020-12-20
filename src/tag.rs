@@ -61,7 +61,7 @@ pub mod complete {
     /// # use nom::{IResult, Err, Needed};
     /// use cool_asserts::assert_matches;
     /// use nom_supreme::tag::complete::tag;
-    /// use nom_supreme::error::{ErrorTree, BaseErrorKind};
+    /// use nom_supreme::error::{ErrorTree, BaseErrorKind, Expectation};
     ///
     /// fn parse_hello(s: &str) -> IResult<&str, &str, ErrorTree<&str>> {
     ///     tag("hello")(s)
@@ -76,7 +76,7 @@ pub mod complete {
     ///     parse_hello("something"),
     ///     Err(Err::Error(ErrorTree::Base {
     ///         location: "something",
-    ///         kind: BaseErrorKind::Tag("hello")
+    ///         kind: BaseErrorKind::Expected(Expectation::Tag("hello")),
     ///     }))
     /// );
     ///
@@ -84,7 +84,7 @@ pub mod complete {
     ///     parse_hello("hel"),
     ///     Err(Err::Error(ErrorTree::Base {
     ///         location: "hel",
-    ///         kind: BaseErrorKind::Tag("hello")
+    ///         kind: BaseErrorKind::Expected(Expectation::Tag("hello")),
     ///     }))
     /// );
     /// ```
@@ -113,7 +113,7 @@ pub mod complete {
     /// # use nom::{IResult, Err, Needed};
     /// use cool_asserts::assert_matches;
     /// use nom_supreme::tag::complete::tag_no_case;
-    /// use nom_supreme::error::{ErrorTree, BaseErrorKind};
+    /// use nom_supreme::error::{ErrorTree, BaseErrorKind, Expectation};
     ///
     /// fn parse_hello(s: &str) -> IResult<&str, &str, ErrorTree<&str>> {
     ///     tag_no_case("hello")(s)
@@ -128,7 +128,7 @@ pub mod complete {
     ///     parse_hello("something"),
     ///     Err(Err::Error(ErrorTree::Base {
     ///         location: "something",
-    ///         kind: BaseErrorKind::Tag("hello")
+    ///         kind: BaseErrorKind::Expected(Expectation::Tag("hello")),
     ///     }))
     /// );
     ///
@@ -136,7 +136,7 @@ pub mod complete {
     ///     parse_hello("HEL"),
     ///     Err(Err::Error(ErrorTree::Base {
     ///         location: "HEL",
-    ///         kind: BaseErrorKind::Tag("hello")
+    ///         kind: BaseErrorKind::Expected(Expectation::Tag("hello")),
     ///     }))
     /// );
     /// ```
@@ -171,7 +171,7 @@ pub mod streaming {
     /// # use nom::{IResult, Err, Needed};
     /// use cool_asserts::assert_matches;
     /// use nom_supreme::tag::streaming::tag;
-    /// use nom_supreme::error::{ErrorTree, BaseErrorKind};
+    /// use nom_supreme::error::{ErrorTree, BaseErrorKind, Expectation};
     ///
     /// fn parse_hello(s: &str) -> IResult<&str, &str, ErrorTree<&str>> {
     ///     tag("hello")(s)
@@ -186,7 +186,7 @@ pub mod streaming {
     ///     parse_hello("something"),
     ///     Err(Err::Error(ErrorTree::Base {
     ///         location: "something",
-    ///         kind: BaseErrorKind::Tag("hello")
+    ///         kind: BaseErrorKind::Expected(Expectation::Tag("hello")),
     ///     }))
     /// );
     ///
@@ -224,7 +224,7 @@ pub mod streaming {
     /// # use nom::{IResult, Err, Needed};
     /// use cool_asserts::assert_matches;
     /// use nom_supreme::tag::streaming::tag_no_case;
-    /// use nom_supreme::error::{ErrorTree, BaseErrorKind};
+    /// use nom_supreme::error::{ErrorTree, BaseErrorKind, Expectation};
     ///
     /// fn parse_hello(s: &str) -> IResult<&str, &str, ErrorTree<&str>> {
     ///     tag_no_case("hello")(s)
@@ -239,7 +239,7 @@ pub mod streaming {
     ///     parse_hello("something"),
     ///     Err(Err::Error(ErrorTree::Base {
     ///         location: "something",
-    ///         kind: BaseErrorKind::Tag("hello")
+    ///         kind: BaseErrorKind::Expected(Expectation::Tag("hello")),
     ///     }))
     /// );
     ///

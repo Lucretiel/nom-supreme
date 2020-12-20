@@ -66,6 +66,12 @@ pub enum Expectation {
     // eof and all_consuming, as well as non-eof parsers like anychar and
     // nom::number::*. Expectation::Eof is therefore unused for now.
     Eof,
+
+    /// Expected any character
+    AnyChar,
+
+    /// Expected any byte
+    Byte,
 }
 
 impl Display for Expectation {
@@ -82,6 +88,8 @@ impl Display for Expectation {
             Expectation::Multispace => write!(f, "whitespace"),
             Expectation::Eof => write!(f, "eof"),
             Expectation::CrLf => write!(f, "CRLF"),
+            Expectation::AnyChar => write!(f, "any character"),
+            Expectation::Byte => write!(f, "any byte"),
         }
     }
 }

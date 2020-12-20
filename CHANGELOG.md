@@ -7,6 +7,12 @@
 ### Added
 
 - `.peek()` combinator to `ParserExt`
+- `.not()` combinator to `ParserExt`
+- `Expectation::AnyChar` and `Expectation::Byte`
+
+### Fixed
+
+- Broken doctests
 
 ## 0.1.3
 

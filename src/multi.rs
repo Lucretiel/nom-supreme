@@ -54,7 +54,7 @@ pub fn parse_separated_terminated<Input, ParseOutput, SepOutput, TermOutput, Par
     fold: impl FnMut(Accum, ParseOutput) -> Accum,
 ) -> impl Parser<Input, Accum, ParseErr>
 where
-    Input: Clone,
+    Input: Clone + PartialEq,
     ParseErr: ParseError<Input>,
 {
     parse_separated_terminated_impl(
@@ -92,12 +92,32 @@ pub fn parse_separated_terminated_res<
     fold: impl FnMut(Accum, ParseOutput) -> Result<Accum, FoldErr>,
 ) -> impl Parser<Input, Accum, ParseErr>
 where
-    Input: Clone,
+    Input: Clone + PartialEq,
     ParseErr: ParseError<Input> + FromExternalError<Input, FoldErr>,
 {
     parse_separated_terminated_impl(parser, separator, terminator, init, fold, |input, err| {
         ParseErr::from_external_error(input, SeparatedNonEmptyList, err)
     })
+}
+
+/// Helper enum for tracking zero length parses. `parse_separated_terminated`
+/// allows for subparsers to return zero-length matches, but if *every*
+/// subparser does so in a loop, that's reported as an error.
+///
+/// This enum specifically tracks the least-recent zero-length parse that has
+/// not been succeeded by a non-zero-length parser.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ZeroLengthParseState {
+    None,
+    Item,
+    Separator,
+}
+
+fn maybe_attach_error<I, E: ParseError<I>>(err1: E, err2: Option<E>) -> E {
+    match err2 {
+        None => err1,
+        Some(err2) => err1.or(err2),
+    }
 }
 
 /// Shared implementation for parse_separated_terminated_res and
@@ -123,11 +143,14 @@ fn parse_separated_terminated_impl<
     mut build_error: impl FnMut(Input, FoldErr) -> ParseErr,
 ) -> impl Parser<Input, Accum, ParseErr>
 where
-    Input: Clone,
+    Input: Clone + PartialEq,
     ParseErr: ParseError<Input>,
 {
     move |mut input: Input| {
         let mut accum = init();
+
+        let mut zero_length_state = ZeroLengthParseState::None;
+        let mut terminator_error = None;
 
         // TODO: various kinds of 0-length tracking:
         // - If we go a full loop without making any progress, that's an error
@@ -141,36 +164,69 @@ where
             // Try to find a value. To fail to do so at this point is an
             // error, since we either just started or successfully parsed a
             // separator.
+            //
+            // If an error occurs here, also try to attach terminator_error.
+            // terminator_error is available if the most recent separator parse
+            // was zero-length, which means that both the terminator and the
+            // item would be valid parses at this point.
             let (tail, value) = match parser.parse(input.clone()) {
                 Ok(success) => success,
                 Err(err) => {
-                    break Err(err.map(move |err| append_error(input, SeparatedNonEmptyList, err)))
+                    break Err(err.map(move |err| {
+                        append_error(
+                            input,
+                            SeparatedNonEmptyList,
+                            maybe_attach_error(err, terminator_error),
+                        )
+                    }))
                 }
             };
 
+            // Check zero-length matches
+            match (input == tail, zero_length_state) {
+                // If both the item and the separator had a zero length match,
+                // we're hanging. Bail.
+                (true, ZeroLengthParseState::Separator) => {
+                    break Err(Error(ParseErr::from_error_kind(
+                        input,
+                        SeparatedNonEmptyList,
+                    )))
+                }
+
+                // If only the item had a zero-length match, update the
+                // state.
+                (true, _) => zero_length_state = ZeroLengthParseState::Item,
+
+                // If the item had a non-zero length match, clear the state
+                (false, _) => zero_length_state = ZeroLengthParseState::None,
+            }
+
+            // Advance the loop state
             accum = fold(accum, value).map_err(|err| Error(build_error(input, err)))?;
             input = tail;
 
-            // Try to find a terminator; if we found it, we're done.
+            // Try to find a terminator; if we found it, we're done. If we
+            // didn't, preserve the error, so that it can be reported as an
+            // .or() branch with the subsequent separator or item error.
             let term_err = match terminator.parse(input.clone()) {
                 // We found a terminator, so we're done
                 Ok((tail, _)) => break Ok((tail, accum)),
 
                 // No terminator. Keep track of the error in case we also fail
-                // to find a separator.
+                // to find a separator or item.
                 Err(Error(err)) => err,
 
                 // Other kinds of errors should be returned immediately.
-                Err(Failure(err)) => {
-                    break Err(Failure(ParseErr::append(input, SeparatedNonEmptyList, err)))
+                Err(err) => {
+                    break Err(
+                        err.map(move |err| ParseErr::append(input, SeparatedNonEmptyList, err))
+                    )
                 }
-                Err(Incomplete(n)) => break Err(Incomplete(n)),
             };
 
             // No terminator, so instead try to find a separator
             let tail = match separator.parse(input.clone()) {
                 Ok((tail, _)) => tail,
-                Err(Incomplete(n)) => break Err(Incomplete(n)),
                 Err(Error(err)) => {
                     break Err(Error(append_error(
                         input,
@@ -181,8 +237,36 @@ where
                 Err(Failure(err)) => {
                     break (Err(Failure(append_error(input, SeparatedNonEmptyList, err))))
                 }
+                Err(Incomplete(n)) => break Err(Incomplete(n)),
             };
 
+            // Check zero-length matches
+            match (input == tail, zero_length_state) {
+                // If both the separator and the item had a zero length match,
+                // we're hanging. Bail.
+                (true, ZeroLengthParseState::Item) => {
+                    break Err(Error(ParseErr::from_error_kind(
+                        input,
+                        SeparatedNonEmptyList,
+                    )))
+                }
+                // If only the separator had a zero-length match, update the
+                // state. Additionally preserve the terminator error so that
+                // it can be reported as an alternate if there was an item
+                // error.
+                (true, _) => {
+                    zero_length_state = ZeroLengthParseState::Separator;
+                    terminator_error = Some(term_err);
+                }
+                // If the separator had a non-zero length match, clear the
+                // state
+                (false, _) => {
+                    zero_length_state = ZeroLengthParseState::None;
+                    terminator_error = None;
+                }
+            }
+
+            // Advance the loop state
             input = tail;
         }
     }

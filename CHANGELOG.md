@@ -2,6 +2,13 @@
 
 ## Unpublished
 
+## 0.3.0
+
+### Added
+
+- `parse_separated_terminated` now works correctly as documented: it smartly detects when the parser is hanging and bail if necessary.
+- `parse_separated_terminated` is now slightly smarter about error cases. If the separator successfully parses a 0-length match, the next item error will include the terminator error as well.
+
 ## 0.2.0
 
 ### Added

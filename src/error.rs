@@ -98,9 +98,7 @@ impl Display for Expectation {
 // errors, which live at the leaves of the tree, and one for
 /// These are the different specific things that can go wrong at a particular
 /// location during a nom parse. Many of these are collected into an
-/// [`ErrorTree`]. See also [`ContextErrorKind`], which is similar, but
-/// represents different kinds of contexts that can be attached to a
-///  [`BaseErrorKind`] in an [`ErrorTree::Stack`].
+/// [`ErrorTree`].
 #[derive(Debug)]
 pub enum BaseErrorKind {
     /// Something specific was expected.
@@ -142,13 +140,15 @@ impl Display for BaseErrorKind {
 /// that were all tried individually and all failed.
 ///
 /// In general, the design goal for this type is to discard as little useful
-/// information as possible. That being said, many [`nom::ErrorKind`] variants
-/// add very little useful contextual information to error traces; for example,
+/// information as possible. That being said, many [`ErrorKind`] variants add
+/// very little useful contextual information to error traces; for example,
 /// [`ErrorKind::Alt`] doesn't add any interesting context to an
 /// [`ErrorTree::Alt`], and its presence in a stack precludes merging together
 /// adjacent sets of [`ErrorTree::Alt`] siblings
 ///
 /// [`VerboseError`]: nom::error::VerboseError
+/// [`ErrorKind`]: nom::error::ErrorKind
+/// [`ErrorKind::Alt`]: nom::error::ErrorKind::Alt
 #[derive(Debug)]
 pub enum ErrorTree<I> {
     /// A specific error event at a specific location. Often this will indicate

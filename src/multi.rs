@@ -34,7 +34,7 @@ fn make_infallible<A, B>(
 /// This parser will stop as soon as it finds a `terminator`. If you wish to
 /// have a `terminator` parser that is the same as your `separator`, you'll
 /// need to add some extra context to the terminator parser; perhaps a
-/// lookahead with [`peek`][crate::ParserExt::peek].
+/// lookahead with [`peek`][crate::parser_ext::ParserExt::peek].
 ///
 /// This parser exists to provide meaningful parse errors. By requiring a
 /// terminator, we can ensure that it doesn't suffer from the normal folding

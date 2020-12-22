@@ -1,7 +1,7 @@
 //! Extensions to the nom [`Parser`][nom::Parser] trait which add postfix
 //! versions of the common combinators. See [`ParserExt`] for details.
 
-use std::{marker::PhantomData, ops::RangeTo};
+use std::{marker::PhantomData, ops::RangeTo, str::FromStr};
 
 use nom::{
     error::{ContextError, ErrorKind as NomErrorKind, FromExternalError, ParseError},
@@ -594,6 +594,40 @@ pub trait ParserExt<I, O, E>: Parser<I, O, E> + Sized {
             phantom: PhantomData,
         }
     }
+
+    /// Create a parser that parses something via [`FromStr`], using this
+    /// parser as a recognizer for the string to pass to
+    /// [`from_str`][FromStr::from_str].
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use nom::{Err, Parser, IResult};
+    /// # use nom::error::{Error, ErrorKind};
+    /// use nom::character::complete::digit1;
+    /// use nom_supreme::parser_ext::ParserExt;
+    ///
+    /// let mut parser = digit1.parse_from_str();
+    ///
+    /// assert_eq!(parser.parse("123 abc"), Ok((" abc", 123)));
+    /// assert_eq!(
+    ///     parser.parse("abc"),
+    ///     Err(Err::Error(Error{input: "abc", code: ErrorKind::Digit})),
+    /// );
+    /// ```
+    #[inline]
+    #[must_use = "Parsers do nothing unless used"]
+    fn parse_from_str<'a, T>(self) -> FromStrParser<Self, T>
+    where
+        Self: Parser<&'a str, &'a str, E>,
+        T: FromStr,
+        E: FromExternalError<&'a str, T::Err>,
+    {
+        FromStrParser {
+            parser: self,
+            phantom: PhantomData,
+        }
+    }
 }
 
 impl<I, O, E, P> ParserExt<I, O, E> for P where P: Parser<I, O, E> {}
@@ -938,6 +972,34 @@ where
             Ok(..) => Err(NomErr::Error(E::from_error_kind(input, NomErrorKind::Not))),
             Err(NomErr::Error(..)) => Ok((input, ())),
             Err(err) => Err(err),
+        }
+    }
+}
+
+/// Parser which parses something via [`FromStr`], using a subparser as a
+/// recognizer for the string to pass to [`from_str`][FromStr::from_str].
+#[derive(Debug, Clone, Copy)]
+pub struct FromStrParser<P, T> {
+    parser: P,
+    phantom: PhantomData<T>,
+}
+
+impl<'a, T, E, P> Parser<&'a str, T, E> for FromStrParser<P, T>
+where
+    P: Parser<&'a str, &'a str, E>,
+    T: FromStr,
+    E: FromExternalError<&'a str, T::Err>,
+{
+    #[inline]
+    fn parse(&mut self, input: &'a str) -> nom::IResult<&'a str, T, E> {
+        let (tail, value_str) = self.parser.parse(input)?;
+        match value_str.parse() {
+            Ok(value) => Ok((tail, value)),
+            Err(parse_err) => Err(NomErr::Error(E::from_external_error(
+                input,
+                NomErrorKind::MapRes,
+                parse_err,
+            ))),
         }
     }
 }

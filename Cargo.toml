@@ -19,4 +19,4 @@ memchr = "2.3.4"
 nom = "6.0.1"
 
 [dev-dependencies]
-cool_asserts = "1.0.2"
+cool_asserts = "1.0.3"

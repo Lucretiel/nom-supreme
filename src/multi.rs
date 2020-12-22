@@ -271,3 +271,268 @@ where
         }
     }
 }
+
+#[cfg(test)]
+mod test_separated_terminated {
+    use cascade::cascade;
+    use cool_asserts::assert_matches;
+    use nom::{
+        branch::alt,
+        character::complete::{alpha0, char, digit1, space0},
+        error::ErrorKind,
+        Err, IResult, Parser,
+    };
+
+    use crate::parser_ext::ParserExt;
+    use crate::{
+        error::{BaseErrorKind, ErrorTree, Expectation},
+        parse_from_str,
+    };
+
+    use super::parse_separated_terminated;
+
+    /// Parse a series of numbers, separated by commas, terminated by a period.
+    fn parse_number_list(input: &str) -> IResult<&str, Vec<i64>, ErrorTree<&str>> {
+        parse_separated_terminated(
+            parse_from_str(digit1),
+            char(',').delimited_by(space0),
+            char('.').preceded_by(space0),
+            Vec::new,
+            |vec, num| cascade! {vec; ..push(num);},
+        )
+        .parse(input)
+    }
+
+    #[test]
+    fn basic() {
+        assert_eq!(
+            parse_number_list("1, 2, 3, 4, 5.").unwrap(),
+            ("", vec![1, 2, 3, 4, 5]),
+        )
+    }
+
+    #[test]
+    fn trailing_input() {
+        assert_eq!(
+            parse_number_list("1, 2, 3, 4, 5. 4, 5, 6.").unwrap(),
+            (" 4, 5, 6.", vec![1, 2, 3, 4, 5]),
+        )
+    }
+
+    #[test]
+    fn only_one() {
+        assert_eq!(parse_number_list("10.").unwrap(), ("", vec![10]),)
+    }
+
+    #[test]
+    fn at_least_one() {
+        let err = parse_number_list("abc").unwrap_err();
+
+        assert_matches!(
+            err,
+            Err::Error(ErrorTree::Stack(stack)) => assert_matches!(
+                stack.as_slice(),
+                [
+                    ErrorTree::Base{location: "abc", kind: BaseErrorKind::Expected(Expectation::Digit)},
+                    ErrorTree::Base{location: "abc", kind: BaseErrorKind::Kind(ErrorKind::SeparatedNonEmptyList)},
+                ],
+            )
+        );
+    }
+
+    /// Test that a parse failure from both the separator and the terminator
+    /// causes an error including both messages
+    #[test]
+    fn terminator_separator_miss() {
+        let err = parse_number_list("10, 20 30.").unwrap_err();
+
+        assert_matches!(
+            err,
+            Err::Error(ErrorTree::Stack(stack)) => assert_matches!(
+                stack.as_slice(),
+                [
+                    ErrorTree::Alt(choices),
+                    ErrorTree::Base{location: " 30.", kind: BaseErrorKind::Kind(ErrorKind::SeparatedNonEmptyList)}
+                ] => assert_matches!(
+                    choices.as_slice(),
+                    [
+                        ErrorTree::Base{location: "30.", kind: BaseErrorKind::Expected(Expectation::Char(','))},
+                        ErrorTree::Base{location: "30.", kind: BaseErrorKind::Expected(Expectation::Char('.'))},
+                    ]
+                )
+            )
+        )
+    }
+
+    /// Test that a terminator is required, even at EoF
+    #[test]
+    fn required_terminator() {
+        let err = parse_number_list("1, 2, 3").unwrap_err();
+
+        assert_matches!(
+            err,
+            Err::Error(ErrorTree::Stack(stack)) => assert_matches!(
+                stack.as_slice(),
+                [
+                    ErrorTree::Alt(choices),
+                    ErrorTree::Base{location: "", kind: BaseErrorKind::Kind(ErrorKind::SeparatedNonEmptyList)}
+                ] => assert_matches!(
+                    choices.as_slice(),
+                    [
+                        ErrorTree::Base{location: "", kind: BaseErrorKind::Expected(Expectation::Char(','))},
+                        ErrorTree::Base{location: "", kind: BaseErrorKind::Expected(Expectation::Char('.'))},
+                    ]
+                )
+            )
+        )
+    }
+
+    /// Test that a parse failure from the item parser includes only that error
+    /// if the separator isn't zero-length
+    #[test]
+    fn item_error() {
+        let err = parse_number_list("1, 2, abc.").unwrap_err();
+
+        assert_matches!(
+            err,
+            Err::Error(ErrorTree::Stack(stack)) => assert_matches!(
+                stack.as_slice(),
+                [
+                    ErrorTree::Base{location: "abc.", kind: BaseErrorKind::Expected(Expectation::Digit)},
+                    ErrorTree::Base{location: "abc.", kind: BaseErrorKind::Kind(ErrorKind::SeparatedNonEmptyList)},
+                ],
+            )
+        );
+    }
+
+    /// Parse a series of numbers ending in periods, separated by 0 or more
+    /// whitespace, terminated by a semicolon. Used to test 0-length
+    /// separator behavior.
+    fn parse_number_dot_list(input: &str) -> IResult<&str, Vec<i64>, ErrorTree<&str>> {
+        parse_separated_terminated(
+            digit1.parse_from_str().terminated(char('.')),
+            space0,
+            char(';'),
+            Vec::new,
+            |vec, num| cascade! {vec; ..push(num);},
+        )
+        .parse(input)
+    }
+
+    #[test]
+    fn zero_length_separator() {
+        assert_eq!(
+            parse_number_dot_list("1.2. 3.4.  5.; abc").unwrap(),
+            (" abc", vec![1, 2, 3, 4, 5])
+        );
+    }
+
+    /// Test that, when a separator matches zero length, and then the item
+    /// parser fails, the returned error includes both the item error and the
+    /// terminator error.
+    #[test]
+    fn zero_length_separator_item_term_error() {
+        let err = parse_number_dot_list("1.2.3.abc.;").unwrap_err();
+
+        assert_matches!(
+            err,
+            Err::Error(ErrorTree::Stack(stack)) => assert_matches!(
+                stack.as_slice(),
+                [
+                    ErrorTree::Alt(choices),
+                    ErrorTree::Base{location: "abc.;", kind: BaseErrorKind::Kind(ErrorKind::SeparatedNonEmptyList)}
+                ] => assert_matches!(
+                    choices.as_slice(),
+                    [
+                        ErrorTree::Base{location: "abc.;", kind: BaseErrorKind::Expected(Expectation::Digit)},
+                        ErrorTree::Base{location: "abc.;", kind: BaseErrorKind::Expected(Expectation::Char(';'))},
+                    ]
+                )
+            )
+        )
+    }
+
+    /// Parse a series of runs of 1 or more digits or 0 more more letters, separated by
+    /// an optional dash, terminated by a semicolon. Used to test
+    /// infinite loop detection
+    fn parse_letters_numbers(input: &str) -> IResult<&str, Vec<&str>, ErrorTree<&str>> {
+        parse_separated_terminated(
+            alt((digit1, alpha0)),
+            char('-').opt(),
+            char(';'),
+            Vec::new,
+            |vec, num| cascade! {vec; ..push(num);},
+        )
+        .parse(input)
+    }
+
+    #[test]
+    fn zero_length_item() {
+        assert_eq!(
+            parse_letters_numbers("----; abc").unwrap(),
+            (" abc", vec!["", "", "", "", ""])
+        )
+    }
+
+    #[test]
+    fn zero_length_separators() {
+        assert_eq!(
+            parse_letters_numbers("abc123abc123; abc").unwrap(),
+            (" abc", vec!["abc", "123", "abc", "123"]),
+        )
+    }
+
+    /// Test that both zero-length separators and items are allowed together,
+    /// as long as the loop makes progress
+    #[test]
+    fn zero_length_mixed() {
+        assert_eq!(
+            parse_letters_numbers("abc--123abc-123-; abc").unwrap(),
+            (" abc", vec!["abc", "", "123", "abc", "123", ""]),
+        )
+    }
+
+    /// Test that if the loop makes no progress, that's an error
+    #[test]
+    fn infinite_loop_aborts() {
+        let err = parse_letters_numbers("abc123-.; abc").unwrap_err();
+
+        assert_matches!(
+            err,
+            Err::Error(ErrorTree::Base {
+                location: ".; abc",
+                kind: BaseErrorKind::Kind(ErrorKind::SeparatedNonEmptyList)
+            })
+        );
+    }
+
+    /// Parse a series of numbers, separated by commas, terminated by optional
+    /// comma and eof. Used to test that the terminator "wins" when it and the
+    /// separator can match the same string.
+    fn parse_comma_separated(input: &str) -> IResult<&str, Vec<i64>, ErrorTree<&str>> {
+        parse_separated_terminated(
+            parse_from_str(digit1),
+            char(','),
+            char(',').opt().all_consuming(),
+            Vec::new,
+            |vec, num| cascade! {vec; ..push(num);},
+        )
+        .parse(input)
+    }
+
+    #[test]
+    fn empty_terminator_wins() {
+        assert_eq!(
+            parse_comma_separated("1,2,3,4").unwrap(),
+            ("", vec![1, 2, 3, 4]),
+        );
+    }
+
+    #[test]
+    fn test_terminator_wins() {
+        assert_eq!(
+            parse_comma_separated("1,2,3,4,").unwrap(),
+            ("", vec![1, 2, 3, 4]),
+        )
+    }
+}

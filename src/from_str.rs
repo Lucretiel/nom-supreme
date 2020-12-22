@@ -31,5 +31,5 @@ where
     T: FromStr,
     E: FromExternalError<&'a str, T::Err>,
 {
-    recognizer.map_res(|value| value.parse())
+    recognizer.parse_from_str()
 }

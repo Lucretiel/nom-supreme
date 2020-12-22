@@ -90,8 +90,6 @@ impl Display for Expectation {
     }
 }
 
-// TODO: Split BaseErrorKind into two separate types: one for actual base
-// errors, which live at the leaves of the tree, and one for
 /// These are the different specific things that can go wrong at a particular
 /// location during a nom parse. Many of these are collected into an
 /// [`ErrorTree`].
@@ -121,23 +119,6 @@ impl Display for BaseErrorKind {
     }
 }
 
-/// A generic struct combining a specific location with some kind of error
-/// information.
-#[derive(Debug, Clone)]
-pub struct AtLocation<I, T> {
-    /// The location associated with this info
-    pub location: I,
-
-    /// The info. Usually a [`BaseErrorKind`] or [`StackContext`].
-    pub info: T,
-}
-
-impl<I: Display, T: Display> Display for AtLocation<I, T> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{} at {:#}", self.info, self.location)
-    }
-}
-
 /// Context that can appear in a stack, above a base [`ErrorTree`]. Stack
 /// contexts are attached by parsers to errors from subparsers during stack
 /// unwinding.
@@ -161,6 +142,23 @@ impl Display for StackContext {
     }
 }
 
+/// A generic struct combining a specific location with some kind of error
+/// information.
+#[derive(Debug, Clone)]
+pub struct AtLocation<I, T> {
+    /// The location associated with this info
+    pub location: I,
+
+    /// The info. Usually a [`BaseErrorKind`] or [`StackContext`].
+    pub info: T,
+}
+
+impl<I: Display, T: Display> Display for AtLocation<I, T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{} at {:#}", self.info, self.location)
+    }
+}
+
 /// A comprehensive tree of nom errors describing a parse failure.
 ///
 /// This Error type is designed to be [`VerboseError`]`++`. While
@@ -168,7 +166,7 @@ impl Display for StackContext {
 /// a full tree. In addition to representing a particular specific parse error,
 /// it can also represent a stack of nested error contexts (for instance, as
 /// provided by [`context`][nom::error::context]), or a list of alternatives
-/// that were all tried individually and all failed.
+/// that were all tried individually by [`alt`] and all failed.
 ///
 /// In general, the design goal for this type is to discard as little useful
 /// information as possible. That being said, many [`ErrorKind`] variants add
@@ -180,6 +178,7 @@ impl Display for StackContext {
 /// [`VerboseError`]: nom::error::VerboseError
 /// [`ErrorKind`]: nom::error::ErrorKind
 /// [`ErrorKind::Alt`]: nom::error::ErrorKind::Alt
+/// [`alt`]: nom::branch::alt
 #[derive(Debug)]
 pub enum ErrorTree<I> {
     /// A specific error event at a specific location. Often this will indicate
@@ -276,7 +275,8 @@ impl<I: Display> Display for ErrorTree<I> {
 impl<I: Display + Debug> Error for ErrorTree<I> {}
 
 impl<I: InputLength> ParseError<I> for ErrorTree<I> {
-    /// Create a new error at the given position
+    /// Create a new error at the given position. Interpret `kind` as an
+    /// [`Expectation`] if possible, to give a more informative error message.
     fn from_error_kind(location: I, kind: NomErrorKind) -> Self {
         let kind = match kind {
             NomErrorKind::Alpha => BaseErrorKind::Expected(Expectation::Alpha),
@@ -310,9 +310,12 @@ impl<I: InputLength> ParseError<I> for ErrorTree<I> {
         })
     }
 
-    /// Combine an existing error with a new one. This is how
-    /// error context is accumulated when backtracing. "other" is the original
-    /// error, and the inputs new error from higher in the call stack.
+    /// Combine an existing error with a new one. This is how error context is
+    /// accumulated when backtracing. "other" is the original error, and the
+    /// inputs new error from higher in the call stack.
+    ///
+    /// If `other` is already an `ErrorTree::Stack`, the context is added to
+    /// the stack; otherwise, a new stack is created, with `other` at the root.
     fn append(location: I, kind: NomErrorKind, other: Self) -> Self {
         let context = AtLocation {
             location,
@@ -320,7 +323,7 @@ impl<I: InputLength> ParseError<I> for ErrorTree<I> {
         };
 
         match other {
-            // Don't create a stack of [ErrorKind::Alt, ErrorTree::Alt]
+            // Don't create a stack of [ErrorKind::Alt, ErrorTree::Alt(..)]
             alt @ ErrorTree::Alt(..) if kind == NomErrorKind::Alt => alt,
 
             // This is already a stack, so push on to it
@@ -332,7 +335,7 @@ impl<I: InputLength> ParseError<I> for ErrorTree<I> {
                 },
             },
 
-            // This isn't a stack, create a new stack
+            // This isn't a stack; create a new stack
             base => ErrorTree::Stack {
                 base: Box::new(base),
                 contexts: vec![context],
@@ -348,22 +351,22 @@ impl<I: InputLength> ParseError<I> for ErrorTree<I> {
         })
     }
 
-    /// Combine two errors from branches of alt
+    /// Combine two errors from branches of alt. If either or both errors are
+    /// already [`ErrorTree::Alt`], the different error sets are merged;
+    /// otherwise, a new [`ErrorTree::Alt`] is created, containing both
+    /// `self` and `other`.
     fn or(self, other: Self) -> Self {
         let siblings = match (self, other) {
-            (ErrorTree::Alt(mut siblings1), ErrorTree::Alt(mut siblings2)) => {
-                if siblings1.capacity() >= siblings2.capacity() {
-                    siblings1.extend(siblings2);
-                    siblings1
-                } else {
-                    siblings2.extend(siblings1);
-                    siblings2
+            (ErrorTree::Alt(siblings1), ErrorTree::Alt(siblings2)) => {
+                match siblings1.capacity() >= siblings2.capacity() {
+                    true => cascade! {siblings1; ..extend(siblings2);},
+                    false => cascade! {siblings2; ..extend(siblings1);},
                 }
             }
-            (ErrorTree::Alt(mut siblings), err) | (err, ErrorTree::Alt(mut siblings)) => {
-                siblings.push(err);
-                siblings
-            }
+            (ErrorTree::Alt(siblings), err) | (err, ErrorTree::Alt(siblings)) => cascade! {
+                siblings;
+                ..push(err);
+            },
             (err1, err2) => vec![err1, err2],
         };
 

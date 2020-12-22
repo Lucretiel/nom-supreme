@@ -2,6 +2,19 @@
 
 ## Unpublished
 
+### Added
+
+- `ParserExt::parse_from_str`
+
+### Tests
+
+- Add comprehensive unit tests to `parse_separated_terminated`
+
+### Internal
+
+- Bump to [cool_asserts] 1.0.3
+- Reimplement `parse_from_str` based on `ParserExt`
+
 ## 0.3.0
 
 ### Added
@@ -52,3 +65,5 @@ No code changes
 ## 0.1.2
 
 - Changelog started
+
+[cool_asserts](https://docs.rs/cool_asserts/)

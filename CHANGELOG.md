@@ -2,6 +2,12 @@
 
 ## Unpublished
 
+### Changed
+
+- Changes to how `ErrorTree` and `Expectation` handle `ErrorKind::Eof`:
+  - Because `ErrorKind::Eof` is used interchangeably by some nom parsers to refer to either "expected eof" or "*un*expected eof", we examine the input via InputLength to determine which variant is intended
+  - Removed `Expectation::Byte` and `Expectation::AnyChar`, replaced them with `Expectation::Something`.
+
 ## 0.3.1
 
 ### Added

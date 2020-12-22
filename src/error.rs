@@ -9,7 +9,10 @@ use std::{
 use cascade::cascade;
 use indent_write::fmt::IndentWriter;
 use joinery::JoinableIterator;
-use nom::error::{ContextError, ErrorKind as NomErrorKind, FromExternalError, ParseError};
+use nom::{
+    error::{ContextError, ErrorKind as NomErrorKind, FromExternalError, ParseError},
+    InputLength,
+};
 
 use crate::final_parser::{ExtractContext, RecreateContext};
 use crate::tag::TagError;
@@ -40,13 +43,13 @@ pub enum Expectation {
     /// An ASCII letter (`[a-zA-Z]`) was expected.
     Alpha,
 
-    /// A digit (`[0-9]`) was expected.
+    /// A decimal digit (`[0-9]`) was expected.
     Digit,
 
-    /// A hex digit (`[0-9a-fA-F]`) was expected.
+    /// A hexadecimal digit (`[0-9a-fA-F]`) was expected.
     HexDigit,
 
-    /// An oct digit (`[0-7]`) was expected.
+    /// An octal digit (`[0-7]`) was expected.
     OctDigit,
 
     /// An alphanumeric character (`[0-9a-zA-Z]`) was expected.
@@ -58,20 +61,14 @@ pub enum Expectation {
     /// A space, tab, newline, or carriage return was expected.
     Multispace,
 
-    /// "\r\n" was expected
+    /// `"\r\n"` was expected.
     CrLf,
 
-    /// Eof was expected
-    // NOTE: currently, ErrorKind::Eof is returned by both eof parsers like
-    // eof and all_consuming, as well as non-eof parsers like anychar and
-    // nom::number::*. Expectation::Eof is therefore unused for now.
+    /// Eof was expected.
     Eof,
 
-    /// Expected any character
-    AnyChar,
-
-    /// Expected any byte
-    Byte,
+    /// Expected something; ie, not Eof.
+    Something,
 }
 
 impl Display for Expectation {
@@ -88,8 +85,7 @@ impl Display for Expectation {
             Expectation::Multispace => write!(f, "whitespace"),
             Expectation::Eof => write!(f, "eof"),
             Expectation::CrLf => write!(f, "CRLF"),
-            Expectation::AnyChar => write!(f, "any character"),
-            Expectation::Byte => write!(f, "any byte"),
+            Expectation::Something => write!(f, "not eof"),
         }
     }
 }
@@ -236,7 +232,7 @@ impl<I: Display> Display for ErrorTree<I> {
 
 impl<I: Display + Debug> Error for ErrorTree<I> {}
 
-impl<I> ParseError<I> for ErrorTree<I> {
+impl<I: InputLength> ParseError<I> for ErrorTree<I> {
     /// Create a new error at the given position
     fn from_error_kind(location: I, kind: NomErrorKind) -> Self {
         let kind = match kind {
@@ -248,6 +244,20 @@ impl<I> ParseError<I> for ErrorTree<I> {
             NomErrorKind::Space => BaseErrorKind::Expected(Expectation::Space),
             NomErrorKind::MultiSpace => BaseErrorKind::Expected(Expectation::Multispace),
             NomErrorKind::CrLf => BaseErrorKind::Expected(Expectation::CrLf),
+
+            // Problem: ErrorKind::Eof is used interchangeably by various nom
+            // parsers to mean either "expected Eof" or "expected NOT eof". See
+            // https://github.com/Geal/nom/issues/1259. For now, we examine the
+            // input string to guess what the likely intention is.
+            NomErrorKind::Eof => match location.input_len() {
+                // The input is at Eof, which means that this refers to an
+                // *unexpected* eof.
+                0 => BaseErrorKind::Expected(Expectation::Something),
+
+                // The input is *not* at eof, which means that this refers to
+                // an *expected* eof.
+                _ => BaseErrorKind::Expected(Expectation::Eof),
+            },
             kind => BaseErrorKind::Kind(kind),
         };
 

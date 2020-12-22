@@ -103,10 +103,6 @@ pub enum BaseErrorKind {
     /// A nom parser failed.
     Kind(NomErrorKind),
 
-    /// A [`context`][nom::error::context] combinator attached additional
-    /// context at a location to an error from a subparser.
-    Context(&'static str),
-
     /// An error outside of nom occurred during parsing; for instance, as a
     /// result of an error during `map_res`.
     // Design note: I've gone back and forth on whether or not to exclude the
@@ -120,8 +116,47 @@ impl Display for BaseErrorKind {
         match *self {
             BaseErrorKind::Expected(expectation) => write!(f, "expected {}", expectation),
             BaseErrorKind::External(ref err) => write!(f, "external error: \"{}\"", err),
-            BaseErrorKind::Kind(kind) => write!(f, "while parsing {:?}", kind),
-            BaseErrorKind::Context(context) => write!(f, "in section '{}'", context),
+            BaseErrorKind::Kind(kind) => write!(f, "error in {:?}", kind),
+        }
+    }
+}
+
+/// A generic struct combining a specific location with some kind of error
+/// information.
+#[derive(Debug, Clone)]
+pub struct AtLocation<I, T> {
+    /// The location associated with this info
+    pub location: I,
+
+    /// The info. Usually a [`BaseErrorKind`] or [`StackContext`].
+    pub info: T,
+}
+
+impl<I: Display, T: Display> Display for AtLocation<I, T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{} at {:#}", self.info, self.location)
+    }
+}
+
+/// Context that can appear in a stack, above a base [`ErrorTree`]. Stack
+/// contexts are attached by parsers to errors from subparsers during stack
+/// unwinding.
+#[derive(Debug, Clone)]
+pub enum StackContext {
+    /// A nom combinator attached an [`ErrorKind`][NomErrorKind] as context
+    /// for a subparser error.
+    Kind(NomErrorKind),
+
+    /// The [`context`] combinator attached a message as context for a
+    /// subparser error.
+    Context(&'static str),
+}
+
+impl Display for StackContext {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match *self {
+            StackContext::Kind(kind) => write!(f, "while parsing {:?}", kind),
+            StackContext::Context(ctx) => write!(f, "in section {:?}", ctx),
         }
     }
 }
@@ -151,19 +186,18 @@ pub enum ErrorTree<I> {
     /// that something like a tag or character was expected at that location.
     /// When used as part of a stack, it indicates some additional context for
     /// the root error of the stack.
-    Base {
-        /// The specific thing that went wrong; see [`BaseErrorKind`] for
-        /// details.
-        kind: BaseErrorKind,
-
-        /// Position of the error in the input data.
-        location: I,
-    },
+    Base(AtLocation<I, BaseErrorKind>),
 
     /// A stack indicates a chain of error contexts was provided. The stack
     /// should be read "backwards"; that is, errors *earlier* in the `Vec`
     /// occurred "sooner" (deeper in the call stack).
-    Stack(Vec<Self>),
+    Stack {
+        /// The original error
+        base: Box<Self>,
+
+        /// The stack of contexts attached to that error
+        contexts: Vec<AtLocation<I, StackContext>>,
+    },
 
     /// A series of parsers were tried in order at the same location (for
     /// instance, via the [`alt`](nom::branch::alt) combinator) and all of
@@ -186,16 +220,20 @@ impl<I> ErrorTree<I> {
         // only happens when alternating between different *kinds* of
         // ErrorTree; nested groups of Alt or Stack are flattened.
         match self {
-            ErrorTree::Base { location, kind } => ErrorTree::Base {
+            ErrorTree::Base(AtLocation { location, info }) => ErrorTree::Base(AtLocation {
                 location: convert_location(location),
-                kind,
-            },
-            ErrorTree::Stack(stack) => ErrorTree::Stack(
-                stack
+                info,
+            }),
+            ErrorTree::Stack { base, contexts } => ErrorTree::Stack {
+                base: Box::new(base.map_locations_ref(convert_location)),
+                contexts: contexts
                     .into_iter()
-                    .map(|err| err.map_locations_ref(convert_location))
+                    .map(|AtLocation { location, info }| AtLocation {
+                        location: convert_location(location),
+                        info,
+                    })
                     .collect(),
-            ),
+            },
             ErrorTree::Alt(siblings) => ErrorTree::Alt(
                 siblings
                     .into_iter()
@@ -217,9 +255,14 @@ impl<I> ErrorTree<I> {
 impl<I: Display> Display for ErrorTree<I> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            ErrorTree::Base { kind, location } => write!(f, "{} at {:#}", kind, location),
-            ErrorTree::Stack(stack) => {
-                write!(f, "{}", stack.iter().rev().join_with(",\n"))
+            ErrorTree::Base(err) => err.fmt(f),
+            ErrorTree::Stack { contexts, base } => {
+                contexts
+                    .iter()
+                    .rev()
+                    .try_for_each(|ctx| writeln!(f, "{},", ctx))?;
+
+                base.fmt(f)
             }
             ErrorTree::Alt(siblings) => {
                 writeln!(f, "one of:")?;
@@ -261,35 +304,48 @@ impl<I: InputLength> ParseError<I> for ErrorTree<I> {
             kind => BaseErrorKind::Kind(kind),
         };
 
-        ErrorTree::Base { location, kind }
+        ErrorTree::Base(AtLocation {
+            location,
+            info: kind,
+        })
     }
 
     /// Combine an existing error with a new one. This is how
     /// error context is accumulated when backtracing. "other" is the original
     /// error, and the inputs new error from higher in the call stack.
-    fn append(input: I, kind: NomErrorKind, other: Self) -> Self {
-        let stack = cascade! {
-            match other {
-                // Don't create a stack of [ErrorKind::Alt, ErrorTree::Alt]
-                alt @ ErrorTree::Alt(..) if kind == NomErrorKind::Alt => return alt,
-                ErrorTree::Stack(stack) => stack,
-                err => cascade! {
-                    Vec::with_capacity(2);
-                    ..push(err);
-                }
-            };
-            ..push(Self::from_error_kind(input, kind));
+    fn append(location: I, kind: NomErrorKind, other: Self) -> Self {
+        let context = AtLocation {
+            location,
+            info: StackContext::Kind(kind),
         };
 
-        ErrorTree::Stack(stack)
+        match other {
+            // Don't create a stack of [ErrorKind::Alt, ErrorTree::Alt]
+            alt @ ErrorTree::Alt(..) if kind == NomErrorKind::Alt => alt,
+
+            // This is already a stack, so push on to it
+            ErrorTree::Stack { contexts, base } => ErrorTree::Stack {
+                base,
+                contexts: cascade! {
+                    contexts;
+                    ..push(context);
+                },
+            },
+
+            // This isn't a stack, create a new stack
+            base => ErrorTree::Stack {
+                base: Box::new(base),
+                contexts: vec![context],
+            },
+        }
     }
 
     /// Create an error indicating an expected character at a given position
     fn from_char(location: I, character: char) -> Self {
-        ErrorTree::Base {
+        ErrorTree::Base(AtLocation {
             location,
-            kind: BaseErrorKind::Expected(Expectation::Char(character)),
-        }
+            info: BaseErrorKind::Expected(Expectation::Char(character)),
+        })
     }
 
     /// Combine two errors from branches of alt
@@ -318,40 +374,46 @@ impl<I: InputLength> ParseError<I> for ErrorTree<I> {
 impl<I> ContextError<I> for ErrorTree<I> {
     /// Similar to append: Create a new error with some added context
     fn add_context(location: I, ctx: &'static str, other: Self) -> Self {
-        let stack = cascade! {
-            match other {
-                ErrorTree::Stack(stack) => stack,
-                err => cascade! {
-                    Vec::with_capacity(2);
-                    ..push(err);
-                }
-            };
-            ..push(ErrorTree::Base {
-                location,
-                kind: BaseErrorKind::Context(ctx),
-            });
+        let context = AtLocation {
+            location,
+            info: StackContext::Context(ctx),
         };
 
-        ErrorTree::Stack(stack)
+        match other {
+            // This is already a stack, so push on to it
+            ErrorTree::Stack { contexts, base } => ErrorTree::Stack {
+                base,
+                contexts: cascade! {
+                    contexts;
+                    ..push(context);
+                },
+            },
+
+            // This isn't a stack, create a new stack
+            base => ErrorTree::Stack {
+                base: Box::new(base),
+                contexts: vec![context],
+            },
+        }
     }
 }
 
 impl<I, E: Error + Send + Sync + 'static> FromExternalError<I, E> for ErrorTree<I> {
     /// Create an error from a given external error, such as from FromStr
     fn from_external_error(location: I, _kind: NomErrorKind, e: E) -> Self {
-        ErrorTree::Base {
+        ErrorTree::Base(AtLocation {
             location,
-            kind: BaseErrorKind::External(Box::new(e)),
-        }
+            info: BaseErrorKind::External(Box::new(e)),
+        })
     }
 }
 
 impl<I> TagError<I, &'static str> for ErrorTree<I> {
     fn from_tag(location: I, tag: &'static str) -> Self {
-        ErrorTree::Base {
+        ErrorTree::Base(AtLocation {
             location,
-            kind: BaseErrorKind::Expected(Expectation::Tag(tag)),
-        }
+            info: BaseErrorKind::Expected(Expectation::Tag(tag)),
+        })
     }
 }
 

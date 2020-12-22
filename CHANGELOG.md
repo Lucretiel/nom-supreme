@@ -2,6 +2,8 @@
 
 ## Unpublished
 
+## 0.3.1
+
 ### Added
 
 - `ParserExt::parse_from_str`

@@ -163,7 +163,8 @@ impl Display for StackContext {
 /// a full tree. In addition to representing a particular specific parse error,
 /// it can also represent a stack of nested error contexts (for instance, as
 /// provided by [`context`][nom::error::context]), or a list of alternatives
-/// that were all tried individually by [`alt`] and all failed.
+/// that were all tried individually by [`alt`][nom::branch::alt] and all
+/// failed.
 ///
 /// In general, the design goal for this type is to discard as little useful
 /// information as possible. That being said, many [`ErrorKind`] variants add
@@ -248,11 +249,12 @@ impl Display for StackContext {
 /// ## Alternatives
 ///
 /// An [`ErrorTree::Alt`] is created when a series of parsers are all tried,
-/// and all of them fail. Most commonly this will happen via the [`alt`]
-/// combinator or the equivalent [`.or`] postfix combinator. When all of these
-/// subparsers fail, their errors (each individually their own `ErrorTree`) are
-/// aggregated into an [`ErrorTree::Alt`], indicating that "any one of these
-/// things were expected."
+/// and all of them fail. Most commonly this will happen via the
+/// [`alt`][nom::branch::alt] combinator or the equivalent [`.or`] postfix
+/// combinator. When all of these subparsers fail, their errors (each
+/// individually their own `ErrorTree`) are aggregated into an
+/// [`ErrorTree::Alt`], indicating that "any one of these things were
+/// expected."
 ///
 /// ```rust
 /// use cool_asserts::assert_matches;
@@ -350,7 +352,6 @@ impl Display for StackContext {
 ///
 /// [`.or`]: nom::Parser::or
 /// [`Alt`]: ErrorTree::Alt
-/// [`alt`]: nom::branch::alt
 /// [`context`]: nom::error::context
 /// [`ErrorKind::Alt`]: nom::error::ErrorKind::Alt
 /// [`ErrorKind`]: nom::error::ErrorKind

@@ -1,5 +1,11 @@
 # Changelog
 
+## Unpublished
+
+### Documentation
+
+- Fix broken links in documentation.
+
 ## 0.4.1
 
 ### Documentation

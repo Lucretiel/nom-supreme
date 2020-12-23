@@ -172,10 +172,6 @@ impl Display for StackContext {
 /// [`ErrorTree::Alt`], and its presence in a stack precludes merging together
 /// adjacent sets of [`ErrorTree::Alt`] siblings.
 ///
-/// # Formatting
-///
-/// The *exact* [`Display`]
-///
 /// # Examples
 ///
 /// ## Base parser errors

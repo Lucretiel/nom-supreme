@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.1
+
+### Documentation
+
+- Fixed major typo in `ErrorTree` documentation.
+
 ## 0.4.0
 
 ### Changed

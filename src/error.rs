@@ -266,13 +266,17 @@ impl Display for StackContext {
 ///
 /// let parse_bool = alt((
 ///     tag("true").value(true),
-///     tag("false").value(true),
+///     tag("false").value(false),
 /// ));
 ///
 /// let mut parse_null_bool = alt((
 ///     parse_bool.map(Some),
 ///     tag("null").value(None),
 /// ));
+///
+/// assert_eq!(parse_null_bool.parse("true").unwrap(), ("", Some(true)));
+/// assert_eq!(parse_null_bool.parse("false").unwrap(), ("", Some(false)));
+/// assert_eq!(parse_null_bool.parse("null").unwrap(), ("", None));
 ///
 /// let err: Err<ErrorTree<&str>> = parse_null_bool.parse("123").unwrap_err();
 ///
@@ -309,13 +313,17 @@ impl Display for StackContext {
 ///
 /// let parse_bool = alt((
 ///     tag("true").value(true),
-///     tag("false").value(true),
+///     tag("false").value(false),
 /// )).context("bool");
 ///
 /// let mut parse_null_bool = alt((
 ///     parse_bool.map(Some),
 ///     tag("null").value(None).context("null"),
 /// )).context("null or bool");
+///
+/// assert_eq!(parse_null_bool.parse("true").unwrap(), ("", Some(true)));
+/// assert_eq!(parse_null_bool.parse("false").unwrap(), ("", Some(false)));
+/// assert_eq!(parse_null_bool.parse("null").unwrap(), ("", None));
 ///
 /// let err: Err<ErrorTree<&str>> = parse_null_bool.parse("123").unwrap_err();
 ///

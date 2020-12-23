@@ -5,6 +5,8 @@
 ### Documentation
 
 - Fix broken links in documentation.
+- Fix incorrect example parser in `ErrorTree` doctests.
+- Add additional example content to `ErrorTree`.
 
 ## 0.4.1
 

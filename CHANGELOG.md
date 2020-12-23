@@ -7,6 +7,19 @@
 - Changes to how `ErrorTree` and `Expectation` handle `ErrorKind::Eof`:
   - Because `ErrorKind::Eof` is used interchangeably by some nom parsers to refer to either "expected eof" or "*un*expected eof", we examine the input via InputLength to determine which variant is intended
   - Removed `Expectation::Byte` and `Expectation::AnyChar`, replaced them with `Expectation::Something`.
+- Major changes to `ErrorTree::Stack`
+  - Now separately represents the context stack and base error as different types.
+  - Split `BaseErrorKind` into `BaseErrorKind` and
+- `BaseErrorKind::External` now reports the error message on an indented line.
+
+### Internal
+
+- Several updates to interior code, unit tests, and doctests, all related to the `ErrorTree` changes.
+
+### Documentation
+
+- Proofread edits of most of the `nom_supreme::error` docs.
+- Added several doctests for `ErrorTree`.
 
 ## 0.3.1
 

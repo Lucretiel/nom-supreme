@@ -285,7 +285,7 @@ mod test_separated_terminated {
 
     use crate::parser_ext::ParserExt;
     use crate::{
-        error::{BaseErrorKind, ErrorTree, Expectation},
+        error::{BaseErrorKind, ErrorTree, Expectation, StackContext},
         parse_from_str,
     };
 
@@ -330,13 +330,13 @@ mod test_separated_terminated {
 
         assert_matches!(
             err,
-            Err::Error(ErrorTree::Stack(stack)) => assert_matches!(
-                stack.as_slice(),
-                [
+            Err::Error(ErrorTree::Stack{contexts, base}) => {
+                assert_eq!(contexts, [("abc", StackContext::Kind(ErrorKind::SeparatedNonEmptyList))]);
+                assert_matches!(
+                    *base,
                     ErrorTree::Base{location: "abc", kind: BaseErrorKind::Expected(Expectation::Digit)},
-                    ErrorTree::Base{location: "abc", kind: BaseErrorKind::Kind(ErrorKind::SeparatedNonEmptyList)},
-                ],
-            )
+                );
+            }
         );
     }
 
@@ -346,22 +346,13 @@ mod test_separated_terminated {
     fn terminator_separator_miss() {
         let err = parse_number_list("10, 20 30.").unwrap_err();
 
-        assert_matches!(
-            err,
-            Err::Error(ErrorTree::Stack(stack)) => assert_matches!(
-                stack.as_slice(),
-                [
-                    ErrorTree::Alt(choices),
-                    ErrorTree::Base{location: " 30.", kind: BaseErrorKind::Kind(ErrorKind::SeparatedNonEmptyList)}
-                ] => assert_matches!(
-                    choices.as_slice(),
-                    [
-                        ErrorTree::Base{location: "30.", kind: BaseErrorKind::Expected(Expectation::Char(','))},
-                        ErrorTree::Base{location: "30.", kind: BaseErrorKind::Expected(Expectation::Char('.'))},
-                    ]
-                )
-            )
-        )
+        assert_matches!(err, Err::Error(ErrorTree::Stack{contexts, base}) => {
+            assert_eq!(contexts, [(" 30.", StackContext::Kind(ErrorKind::SeparatedNonEmptyList))]);
+            assert_matches!(*base, ErrorTree::Alt(choices) => assert_matches!(choices.as_slice(), [
+                ErrorTree::Base{location: "30.", kind: BaseErrorKind::Expected(Expectation::Char(','))},
+                ErrorTree::Base{location: "30.", kind: BaseErrorKind::Expected(Expectation::Char('.'))},
+            ]));
+        });
     }
 
     /// Test that a terminator is required, even at EoF
@@ -369,22 +360,22 @@ mod test_separated_terminated {
     fn required_terminator() {
         let err = parse_number_list("1, 2, 3").unwrap_err();
 
-        assert_matches!(
-            err,
-            Err::Error(ErrorTree::Stack(stack)) => assert_matches!(
-                stack.as_slice(),
+        assert_matches!(err, Err::Error(ErrorTree::Stack{contexts, base}) => {
+            assert_eq!(contexts, [("", StackContext::Kind(ErrorKind::SeparatedNonEmptyList))]);
+            assert_matches!(*base, ErrorTree::Alt(choices) => assert_matches!(
+                choices.as_slice(),
                 [
-                    ErrorTree::Alt(choices),
-                    ErrorTree::Base{location: "", kind: BaseErrorKind::Kind(ErrorKind::SeparatedNonEmptyList)}
-                ] => assert_matches!(
-                    choices.as_slice(),
-                    [
-                        ErrorTree::Base{location: "", kind: BaseErrorKind::Expected(Expectation::Char(','))},
-                        ErrorTree::Base{location: "", kind: BaseErrorKind::Expected(Expectation::Char('.'))},
-                    ]
-                )
-            )
-        )
+                    ErrorTree::Base {
+                        location: "",
+                        kind: BaseErrorKind::Expected(Expectation::Char(','))
+                    },
+                    ErrorTree::Base {
+                        location: "",
+                        kind: BaseErrorKind::Expected(Expectation::Char('.'))
+                    },
+                ]
+            ));
+        });
     }
 
     /// Test that a parse failure from the item parser includes only that error
@@ -393,16 +384,13 @@ mod test_separated_terminated {
     fn item_error() {
         let err = parse_number_list("1, 2, abc.").unwrap_err();
 
-        assert_matches!(
-            err,
-            Err::Error(ErrorTree::Stack(stack)) => assert_matches!(
-                stack.as_slice(),
-                [
-                    ErrorTree::Base{location: "abc.", kind: BaseErrorKind::Expected(Expectation::Digit)},
-                    ErrorTree::Base{location: "abc.", kind: BaseErrorKind::Kind(ErrorKind::SeparatedNonEmptyList)},
-                ],
-            )
-        );
+        assert_matches!(err, Err::Error(ErrorTree::Stack{base, contexts}) => {
+            assert_eq!(contexts, [("abc.", StackContext::Kind(ErrorKind::SeparatedNonEmptyList))]);
+            assert_matches!(*base, ErrorTree::Base {
+                location: "abc.",
+                kind: BaseErrorKind::Expected(Expectation::Digit),
+            });
+        });
     }
 
     /// Parse a series of numbers ending in periods, separated by 0 or more
@@ -434,22 +422,22 @@ mod test_separated_terminated {
     fn zero_length_separator_item_term_error() {
         let err = parse_number_dot_list("1.2.3.abc.;").unwrap_err();
 
-        assert_matches!(
-            err,
-            Err::Error(ErrorTree::Stack(stack)) => assert_matches!(
-                stack.as_slice(),
+        assert_matches!(err, Err::Error(ErrorTree::Stack{contexts, base}) => {
+            assert_eq!(contexts, [("abc.;", StackContext::Kind(ErrorKind::SeparatedNonEmptyList))]);
+            assert_matches!(*base, ErrorTree::Alt(choices) => assert_matches!(
+                choices.as_slice(),
                 [
-                    ErrorTree::Alt(choices),
-                    ErrorTree::Base{location: "abc.;", kind: BaseErrorKind::Kind(ErrorKind::SeparatedNonEmptyList)}
-                ] => assert_matches!(
-                    choices.as_slice(),
-                    [
-                        ErrorTree::Base{location: "abc.;", kind: BaseErrorKind::Expected(Expectation::Digit)},
-                        ErrorTree::Base{location: "abc.;", kind: BaseErrorKind::Expected(Expectation::Char(';'))},
-                    ]
-                )
-            )
-        )
+                    ErrorTree::Base {
+                        location: "abc.;",
+                        kind: BaseErrorKind::Expected(Expectation::Digit)
+                    },
+                    ErrorTree::Base {
+                        location: "abc.;",
+                        kind: BaseErrorKind::Expected(Expectation::Char(';'))
+                    },
+                ]
+            ));
+        });
     }
 
     /// Parse a series of runs of 1 or more digits or 0 more more letters, separated by

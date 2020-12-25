@@ -7,6 +7,7 @@
 - Fix broken links in documentation.
 - Fix incorrect example parser in `ErrorTree` doctests.
 - Add additional example content to `ErrorTree`.
+- Add additional example to `ParserExt::parse_from_str`.
 
 ## 0.4.1
 

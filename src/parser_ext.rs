@@ -615,6 +615,36 @@ pub trait ParserExt<I, O, E>: Parser<I, O, E> + Sized {
     ///     Err(Err::Error(Error{input: "abc", code: ErrorKind::Digit})),
     /// );
     /// ```
+    ///
+    /// # Parse error example
+    ///
+    /// If the [`FromStr`] parser fails, the error is recoverable from via
+    /// [`FromExternalError`]. In general, though, it's better practice to
+    /// ensure your recognizer won't allow invalid strings to be forwarded to
+    /// the [`FromStr`] parser
+    ///
+    /// ```rust
+    /// use std::num::ParseIntError;
+    /// use cool_asserts::assert_matches;
+    /// # use nom::{Err, Parser, IResult};
+    /// # use nom::error::{ErrorKind};
+    /// use nom::character::complete::alphanumeric1;
+    /// use nom_supreme::parser_ext::ParserExt;
+    /// use nom_supreme::error::{ErrorTree, BaseErrorKind};
+    ///
+    /// let mut parser = alphanumeric1.parse_from_str();
+    ///
+    /// assert_matches!(parser.parse("123 abc"), Ok((" abc", 123)));
+    /// assert_matches!(
+    ///     parser.parse("abc"),
+    ///     Err(Err::Error(ErrorTree::Base{
+    ///         location: "abc",
+    ///         kind: BaseErrorKind::External(err),
+    ///     })) => {
+    ///         let _err: &ParseIntError = err.downcast_ref().unwrap();
+    ///     },
+    /// );
+    /// ```
     #[inline]
     #[must_use = "Parsers do nothing unless used"]
     fn parse_from_str<'a, T>(self) -> FromStrParser<Self, T>

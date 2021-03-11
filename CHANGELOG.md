@@ -1,6 +1,10 @@
 # Changelog
 
-## Unpublished
+## 0.4.2
+
+### Added
+
+- Implement `ErrorConvert` for `ErrorTree`, enabling its use in bit parsers
 
 ### Documentation
 

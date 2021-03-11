@@ -11,7 +11,7 @@ use indent_write::fmt::IndentWriter;
 use joinery::JoinableIterator;
 use nom::{
     error::{ContextError, ErrorKind as NomErrorKind, FromExternalError, ParseError},
-    InputLength,
+    ErrorConvert, InputLength,
 };
 
 use crate::final_parser::{ExtractContext, RecreateContext};
@@ -601,6 +601,18 @@ impl<I> TagError<I, &'static str> for ErrorTree<I> {
     }
 }
 
+impl<I> ErrorConvert<ErrorTree<(I, usize)>> for ErrorTree<I> {
+    fn convert(self) -> ErrorTree<(I, usize)> {
+        self.map_locations(|location| (location, 0))
+    }
+}
+
+impl<I> ErrorConvert<ErrorTree<I>> for ErrorTree<(I, usize)> {
+    fn convert(self) -> ErrorTree<I> {
+        self.map_locations(move |(location, _offset)| location)
+    }
+}
+
 impl<I, T> ExtractContext<I, ErrorTree<T>> for ErrorTree<I>
 where
     I: Clone,
@@ -608,5 +620,50 @@ where
 {
     fn extract_context(self, original_input: I) -> ErrorTree<T> {
         self.map_locations(move |location| T::recreate_context(original_input.clone(), location))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use nom::{
+        bits::{bits, complete::take},
+        sequence::tuple,
+        IResult, Parser,
+    };
+
+    fn parse_bool_bit(
+        input: (&[u8], usize),
+    ) -> IResult<(&[u8], usize), bool, ErrorTree<(&[u8], usize)>> {
+        take(1usize).map(|bit: u8| bit != 0).parse(input)
+    }
+
+    /// Parse 8 bits
+    fn parse_bits(
+        input: &[u8],
+    ) -> IResult<&[u8], (bool, bool, bool, bool, bool, bool, bool, bool), ErrorTree<&[u8]>> {
+        bits(tuple((
+            parse_bool_bit,
+            parse_bool_bit,
+            parse_bool_bit,
+            parse_bool_bit,
+            parse_bool_bit,
+            parse_bool_bit,
+            parse_bool_bit,
+            parse_bool_bit,
+        )))
+        .parse(input)
+    }
+
+    /// Test that ErrorTree can be used with a bits parser, which requires
+    /// ErrorConvert
+    #[test]
+    fn error_tree_bits() {
+        let values = [0b1010_1111, 10];
+        let (tail, result) = parse_bits(&values).unwrap();
+
+        assert_eq!(tail, &[10]);
+        assert_eq!(result, (true, false, true, false, true, true, true, true));
     }
 }

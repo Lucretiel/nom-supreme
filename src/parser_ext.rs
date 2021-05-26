@@ -242,9 +242,38 @@ pub trait ParserExt<I, O, E>: Parser<I, O, E> + Sized {
         I: Clone + Slice<RangeTo<usize>> + Offset,
     {
         Recognize {
-            parser: self,
+            parser: self.with_recognized(),
             phantom: PhantomData,
         }
+    }
+
+    /// Return the parsed value, but also return the entire input that was
+    /// consumed by the parse
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use nom::{Err, Parser};
+    /// # use nom::error::{Error, ErrorKind};
+    /// use nom::character::complete::space1;
+    /// use nom_supreme::parser_ext::ParserExt;
+    /// use nom_supreme::tag::complete::tag;
+    ///
+    /// let mut parser = tag("Hello").delimited_by(space1).with_recognized();
+    ///
+    /// assert_eq!(parser.parse("   Hello   World!"), Ok(("World!", ("   Hello   ", "Hello"))));
+    /// assert_eq!(
+    ///     parser.parse("Hello"),
+    ///     Err(Err::Error(Error{input: "Hello", code: ErrorKind::Space}))
+    /// )
+    /// ```
+    #[inline]
+    #[must_use = "Parsers do nothing unless used"]
+    fn with_recognized(self) -> WithRecognized<Self>
+    where
+        I: Clone + Slice<RangeTo<usize>> + Offset,
+    {
+        WithRecognized { parser: self }
     }
 
     /// Replace this parser's output with a clone of `value` every time it
@@ -775,7 +804,7 @@ where
 /// instead returns the consumed input.
 #[derive(Debug, Clone, Copy)]
 pub struct Recognize<P, O> {
-    parser: P,
+    parser: WithRecognized<P>,
     phantom: PhantomData<O>,
 }
 
@@ -786,9 +815,29 @@ where
 {
     #[inline]
     fn parse(&mut self, input: I) -> nom::IResult<I, I, E> {
-        let (tail, _) = self.parser.parse(input.clone())?;
+        self.parser
+            .parse(input)
+            .map(|(tail, (recognized, _))| (tail, recognized))
+    }
+}
+
+/// Parser which, when successful, returns the result of the inner parser and
+/// also the consumed input
+#[derive(Debug, Clone, Copy)]
+pub struct WithRecognized<P> {
+    parser: P,
+}
+
+impl<I, O, E, P> Parser<I, (I, O), E> for WithRecognized<P>
+where
+    P: Parser<I, O, E>,
+    I: Clone + Slice<RangeTo<usize>> + Offset,
+{
+    #[inline]
+    fn parse(&mut self, input: I) -> nom::IResult<I, (I, O), E> {
+        let (tail, output) = self.parser.parse(input.clone())?;
         let index = input.offset(&tail);
-        Ok((tail, input.slice(..index)))
+        Ok((tail, (input.slice(..index), output)))
     }
 }
 

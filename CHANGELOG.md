@@ -1,5 +1,11 @@
 # Changelog
 
+# 0.4.3
+
+### Added
+
+- Add `with_recognized` combinator to `ParserExt`.
+
 ## 0.4.2
 
 ### Added

@@ -204,6 +204,17 @@ where
     }
 }
 
+/// `extract_context` can be used directly on `Result` values that have an
+/// error with `ExtractContext`
+impl<T, E1, E2, I> ExtractContext<I, Result<T, E2>> for Result<T, E1>
+where
+    E1: ExtractContext<I, E2>,
+{
+    fn extract_context(self, original_input: I) -> Result<T, E2> {
+        self.map_err(move |err| err.extract_context(original_input))
+    }
+}
+
 /// Bootstrapping layer for a nom parser.
 ///
 /// This function is intended to be the entry point into a nom parser; it

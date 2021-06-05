@@ -633,16 +633,16 @@ mod tests {
         IResult, Parser,
     };
 
-    fn parse_bool_bit(
-        input: (&[u8], usize),
-    ) -> IResult<(&[u8], usize), bool, ErrorTree<(&[u8], usize)>> {
+    type BitInput<'a> = (&'a [u8], usize);
+
+    fn parse_bool_bit(input: (&[u8], usize)) -> IResult<BitInput, bool, ErrorTree<BitInput>> {
         take(1usize).map(|bit: u8| bit != 0).parse(input)
     }
 
+    type Byte = (bool, bool, bool, bool, bool, bool, bool, bool);
+
     /// Parse 8 bits
-    fn parse_bits(
-        input: &[u8],
-    ) -> IResult<&[u8], (bool, bool, bool, bool, bool, bool, bool, bool), ErrorTree<&[u8]>> {
+    fn parse_bits(input: &[u8]) -> IResult<&[u8], Byte, ErrorTree<&[u8]>> {
         bits(tuple((
             parse_bool_bit,
             parse_bool_bit,

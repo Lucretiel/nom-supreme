@@ -1,8 +1,39 @@
-//! Additional parser combinators for running subparsers in a loop. Generally
-//! designed to try to provide more useful errors by being aware of a terminal
-//! condition.
+/*!
+Perfected looping parsers designed to behave more reliably and provide more
+useful parse errors.
 
-use std::convert::Infallible;
+The combinators in this module all generally follow the same pattern for
+parsing in a loop. They parse an item; then, they attempt to parse a
+`terminator`. If the `terminator` is found, the parse returns successfully;
+otherwise, they attempt to parse a `separator`. If they fail to parse either
+a `separator` or a `terminator`, the parse fails; otherwise, it will continue
+on to parse the next item.
+
+These combinators always parse at least 1 item. If you want 0 or more things
+to be parsed, use [`opt`] or [`alt`] to handle that case.
+
+These combinators will stop as soon as they find a `terminator`. If you wish
+to have a `terminator` parser that is the same as your `separator`, you'll need
+to add some extra context to the terminator parser; perhaps a lookahead
+with [`peek`].
+
+These combinators exists to provide meaningful parse errors. By requiring a
+`terminator`, we can ensure that they don't suffer from the normal folding
+parser problem of unconditionally returning success because a subparser failure
+is interpreted as the end of the loop. This ensures that potentially important
+errors aren't thrown away.
+
+The combinators will attempt to smartly allow 0-length matches. It will allow
+subparsers to have 0-length matches, but if a full loop is made without any
+progress being made, we assume we've encountered an infinite loop and return
+a parse error.
+
+[`opt`]: crate::parser_ext::ParserExt::opt
+[`alt`]: nom::branch::alt
+[`peek`]: crate::parser_ext::ParserExt::peek
+*/
+
+use std::{convert::Infallible, iter};
 
 use nom::{
     error::{append_error, ErrorKind::SeparatedNonEmptyList, FromExternalError, ParseError},
@@ -10,40 +41,95 @@ use nom::{
     Parser,
 };
 
-fn make_infallible<A, B>(
-    mut func: impl FnMut(A, B) -> A,
-) -> impl FnMut(A, B) -> Result<A, Infallible> {
-    move |a, b| Ok(func(a, b))
+/**
+Parse a series of 1 or more things, separated by `separator`, terminated by
+`terminator`, and collect them into a collection using `Extend`. See the
+[module] docs for a detailed description of how this parser parses a sequence.
+
+# Example
+
+```
+use nom_supreme::{
+    multi::collect_separated_terminated,
+    parser_ext::ParserExt,
+    error::ErrorTree,
+};
+use nom::character::complete::{digit1, char, space0};
+use nom::{IResult, Parser, error::ParseError};
+
+fn parse_number(input: &str) -> IResult<&str, i32, ErrorTree<&str>> {
+    digit1
+        .preceded_by(char('-').opt())
+        .recognize()
+        .parse_from_str()
+        .parse(input)
 }
 
-/// The perfected folding parser. Parses a series of 1 more more things,
-/// separated by some `separator`, terminated by some `terminator`, folding
-/// all of them together.
-///
-/// When parsing begins, an accumulator value is created with init(). Then,
-/// each parsed item will be folded into the accumulator via the `fold`
-/// function. After parsing each item, `parse_separated_terminated` will
-/// attempt to parse a `terminator`. If it succeeds, it will return the
-/// accumulator; otherwise, it will attempt to parse a separator. If it fails
-/// to parse either a separator or a terminator, it will return an error;
-/// otherwise, it will continue on to parse and fold the next item.
-///
-/// If you want 0 or more things to be parsed, wrap this in
-/// [`opt`][crate::parser_ext::ParserExt::opt] or [`alt`][nom::branch::alt].
-///
-/// This parser will stop as soon as it finds a `terminator`. If you wish to
-/// have a `terminator` parser that is the same as your `separator`, you'll
-/// need to add some extra context to the terminator parser; perhaps a
-/// lookahead with [`peek`][crate::parser_ext::ParserExt::peek].
-///
-/// This parser exists to provide meaningful parse errors. By requiring a
-/// terminator, we can ensure that it doesn't suffer from the normal folding
-/// parser problem of unconditionally returning success because all parse
-/// failures simply end the fold without knowing if there's a larger problem.
-///
-/// `parse_separated_terminated` will attempt to smartly allow 0-length
-/// matches. It will allow subparsers to have 0-length matches, but if a full
-/// loop is made without any progress being made, it will return an error.
+// A vector is a square brackets, containing comma separated numbers, with
+// whitespace in between
+let mut vec_parser = collect_separated_terminated(
+    // Parse numbers
+    parse_number.terminated(space0),
+
+    // separated by commas
+    char(',').terminated(space0),
+
+    // terminated by a close bracket
+    char(']'),
+)
+// Allow for empty vectors
+.or(char(']').value(Vec::new()))
+.preceded_by(char('[').terminated(space0));
+
+let result: IResult<&str, Vec<i32>, ErrorTree<&str>> = vec_parser.parse("[1, 2, -3, 4]");
+let vec = result.unwrap().1;
+assert_eq!(vec, [1, 2, -3, 4]);
+
+```
+
+[module]: crate::multi
+*/
+pub fn collect_separated_terminated<
+    Input,
+    ParseOutput,
+    SepOutput,
+    TermOutput,
+    ParseErr,
+    Collection,
+>(
+    parser: impl Parser<Input, ParseOutput, ParseErr>,
+    separator: impl Parser<Input, SepOutput, ParseErr>,
+    terminator: impl Parser<Input, TermOutput, ParseErr>,
+) -> impl Parser<Input, Collection, ParseErr>
+where
+    Input: Clone + PartialEq,
+    ParseErr: ParseError<Input>,
+    Collection: Default + Extend<ParseOutput>,
+{
+    parse_separated_terminated(
+        parser,
+        separator,
+        terminator,
+        Collection::default,
+        |mut collection, item| {
+            // TODO: use extend_one
+            collection.extend(iter::once(item));
+            collection
+        },
+    )
+}
+
+/**
+Parse a series of 1 or more things, separated by `separator`, terminated by
+`terminator`, and fold them together using a folding function.
+
+When this parser is run, it will first create an accumulator value with `init`.
+It will then combine it with every parsed item using `fold`, which should
+return the new accumulator for each item. See the [module] docs for details
+of how this parser parses a sequence.
+
+[module]: crate::multi
+*/
 #[inline]
 pub fn parse_separated_terminated<Input, ParseOutput, SepOutput, TermOutput, ParseErr, Accum>(
     parser: impl Parser<Input, ParseOutput, ParseErr>,
@@ -51,7 +137,7 @@ pub fn parse_separated_terminated<Input, ParseOutput, SepOutput, TermOutput, Par
     terminator: impl Parser<Input, TermOutput, ParseErr>,
 
     init: impl FnMut() -> Accum,
-    fold: impl FnMut(Accum, ParseOutput) -> Accum,
+    mut fold: impl FnMut(Accum, ParseOutput) -> Accum,
 ) -> impl Parser<Input, Accum, ParseErr>
 where
     Input: Clone + PartialEq,
@@ -62,18 +148,19 @@ where
         separator,
         terminator,
         init,
-        make_infallible(fold),
-        |_input, _err| unreachable!(),
+        move |accum, item| Ok(fold(accum, item)),
+        |_input, err: Infallible| match err {},
     )
 }
 
-/// The perfected folding parser. Parses a series of 1 more more things,
-/// separated by some `separator`, terminated by some `terminator`, folding
-/// all of them together with a fallible fold function.
-///
-/// This function is identical to [`parse_separated_terminated`], except that
-/// the fold function may return an error. See its documentation for more
-/// details about the precise behavior of this parser.
+/**
+Parse a series of 1 or more things, separated by some `separator`, terminated
+by some `terminator`, folding them all together with a fallible fold function.
+
+This function is identical to [`parse_separated_terminated`], except that
+the fold function may return an error, which ends the parse early. See its
+documentation for more details about the precise behavior of this parser.
+*/
 #[inline]
 pub fn parse_separated_terminated_res<
     Input,
@@ -107,16 +194,18 @@ where
 /// This enum specifically tracks the least-recent zero-length parse that has
 /// not been succeeded by a non-zero-length parser.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ZeroLengthParseState {
+enum ZeroLengthParseState<E> {
     None,
     Item,
-    Separator,
+    Separator { terminator_error: E },
 }
 
-fn maybe_attach_error<I, E: ParseError<I>>(err1: E, err2: Option<E>) -> E {
-    match err2 {
-        None => err1,
-        Some(err2) => err1.or(err2),
+impl<E> ZeroLengthParseState<E> {
+    fn terminator_error(self) -> Option<E> {
+        match self {
+            Self::Separator { terminator_error } => Some(terminator_error),
+            _ => None,
+        }
     }
 }
 
@@ -150,16 +239,7 @@ where
         let mut accum = init();
 
         let mut zero_length_state = ZeroLengthParseState::None;
-        let mut terminator_error = None;
 
-        // TODO: various kinds of 0-length tracking:
-        // - If we go a full loop without making any progress, that's an error
-        // - If the separator matches a 0-length match, and the parser fails,
-        //   include the most recent terminator error along with the parser
-        //   parser error. It *might* be worth doing this even if separator
-        //   is non-zero length? For example, suppose the separator is , and
-        //   the terminator is , with a peeking lookahead. It might be worth
-        //   knowing that the terminator was tried and failed there.
         loop {
             // Try to find a value. To fail to do so at this point is an
             // error, since we either just started or successfully parsed a
@@ -172,21 +252,28 @@ where
             let (tail, value) = match parser.parse(input.clone()) {
                 Ok(success) => success,
                 Err(err) => {
-                    break Err(err.map(move |err| {
+                    break Err(err.map(move |item_error| {
                         append_error(
                             input,
                             SeparatedNonEmptyList,
-                            maybe_attach_error(err, terminator_error),
+                            match zero_length_state.terminator_error() {
+                                None => item_error,
+                                Some(terminator_error) => item_error.or(terminator_error),
+                            },
                         )
                     }))
                 }
             };
 
             // Check zero-length matches
-            match (input == tail, zero_length_state) {
+            zero_length_state = match (input == tail, zero_length_state) {
                 // If both the item and the separator had a zero length match,
                 // we're hanging. Bail.
-                (true, ZeroLengthParseState::Separator) => {
+                //
+                // It doesn't make sense to include the terminator error here,
+                // because we *did* successfully parse a separator and an
+                // item, they just happened to be zero length
+                (true, ZeroLengthParseState::Separator { .. }) => {
                     break Err(Error(ParseErr::from_error_kind(
                         input,
                         SeparatedNonEmptyList,
@@ -195,11 +282,11 @@ where
 
                 // If only the item had a zero-length match, update the
                 // state.
-                (true, _) => zero_length_state = ZeroLengthParseState::Item,
+                (true, _) => ZeroLengthParseState::Item,
 
                 // If the item had a non-zero length match, clear the state
-                (false, _) => zero_length_state = ZeroLengthParseState::None,
-            }
+                (false, _) => ZeroLengthParseState::None,
+            };
 
             // Advance the loop state
             accum = fold(accum, value).map_err(|err| Error(build_error(input, err)))?;
@@ -208,7 +295,7 @@ where
             // Try to find a terminator; if we found it, we're done. If we
             // didn't, preserve the error, so that it can be reported as an
             // .or() branch with the subsequent separator or item error.
-            let term_err = match terminator.parse(input.clone()) {
+            let terminator_error = match terminator.parse(input.clone()) {
                 // We found a terminator, so we're done
                 Ok((tail, _)) => break Ok((tail, accum)),
 
@@ -227,21 +314,25 @@ where
             // No terminator, so instead try to find a separator
             let tail = match separator.parse(input.clone()) {
                 Ok((tail, _)) => tail,
-                Err(Error(err)) => {
+                Err(Error(separator_error)) => {
                     break Err(Error(append_error(
                         input,
                         SeparatedNonEmptyList,
-                        ParseErr::or(err, term_err),
+                        ParseErr::or(separator_error, terminator_error),
                     )))
                 }
-                Err(Failure(err)) => {
-                    break (Err(Failure(append_error(input, SeparatedNonEmptyList, err))))
+                Err(Failure(separator_error)) => {
+                    break (Err(Failure(append_error(
+                        input,
+                        SeparatedNonEmptyList,
+                        separator_error,
+                    ))))
                 }
                 Err(Incomplete(n)) => break Err(Incomplete(n)),
             };
 
             // Check zero-length matches
-            match (input == tail, zero_length_state) {
+            zero_length_state = match (input == tail, zero_length_state) {
                 // If both the separator and the item had a zero length match,
                 // we're hanging. Bail.
                 (true, ZeroLengthParseState::Item) => {
@@ -254,17 +345,12 @@ where
                 // state. Additionally preserve the terminator error so that
                 // it can be reported as an alternate if there was an item
                 // error.
-                (true, _) => {
-                    zero_length_state = ZeroLengthParseState::Separator;
-                    terminator_error = Some(term_err);
-                }
+                (true, _) => ZeroLengthParseState::Separator { terminator_error },
+
                 // If the separator had a non-zero length match, clear the
                 // state
-                (false, _) => {
-                    zero_length_state = ZeroLengthParseState::None;
-                    terminator_error = None;
-                }
-            }
+                (false, _) => ZeroLengthParseState::None,
+            };
 
             // Advance the loop state
             input = tail;

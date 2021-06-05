@@ -1,6 +1,18 @@
 # Changelog
 
-# 0.4.3
+# Unpublished
+
+### Added
+
+- Add `ExtractContext<E2> for Result<T, E1>`
+- Add `collect_separated_terminated`
+
+### Changed
+
+- Internal code style fixes
+- Implementation improvements for parsers in `multi`
+
+## 0.4.3
 
 ### Added
 

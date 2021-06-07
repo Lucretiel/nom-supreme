@@ -7,7 +7,16 @@ parsing in a loop. They parse an item; then, they attempt to parse a
 `terminator`. If the `terminator` is found, the parse returns successfully;
 otherwise, they attempt to parse a `separator`. If they fail to parse either
 a `separator` or a `terminator`, the parse fails; otherwise, it will continue
-on to parse the next item.
+on to parse the next item. The parsed items are collected together into a final
+value; each combinator does this in a slightly different way:
+
+- [`collect_separated_terminated`] collects the parsed items into a collection
+with [`Extend`].
+- [`parse_separated_terminated`] combines the parsed items with a folding
+function.
+- [`parse_separated_terminated_res`] combines the parsed items with a fallible
+folding function; it may return early if the folding function returns an
+[`Err`].
 
 These combinators always parse at least 1 item. If you want 0 or more things
 to be parsed, use [`opt`] or [`alt`] to handle that case.
@@ -43,8 +52,13 @@ use nom::{
 
 /**
 Parse a series of 1 or more things, separated by `separator`, terminated by
-`terminator`, and collect them into a collection using `Extend`. See the
-[module] docs for a detailed description of how this parser parses a sequence.
+`terminator`, and collect them into a collection using [`Extend`].
+
+When this parser is run, it will create a new, empty collection with
+[`Default`]. It will then collect each parsed item into the collection with
+[`Extend`]. See the [module] docs for details of how this parser parses a sequence.
+
+See the [module] docs for a detailed description of how this parser parses a sequence.
 
 # Example
 

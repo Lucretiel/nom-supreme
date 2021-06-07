@@ -1,11 +1,15 @@
 # Changelog
 
-# Unpublished
+# 0.4.4
 
 ### Added
 
 - Add `ExtractContext<E2> for Result<T, E1>`
 - Add `collect_separated_terminated`
+
+### Documentation
+
+- Documentation refactoring in `multi`
 
 ### Changed
 

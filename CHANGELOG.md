@@ -1,6 +1,12 @@
 # Changelog
 
-# 0.4.4
+## Unreleased
+
+### Fixed
+
+- Fixed some edge case bugs in error handling in `multi`
+
+## 0.4.4
 
 ### Added
 

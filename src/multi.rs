@@ -265,18 +265,24 @@ where
             // item would be valid parses at this point.
             let (tail, value) = match parser.parse(input.clone()) {
                 Ok(success) => success,
-                Err(err) => {
-                    break Err(err.map(move |item_error| {
-                        append_error(
-                            input,
-                            SeparatedNonEmptyList,
-                            match zero_length_state.terminator_error() {
-                                None => item_error,
-                                Some(terminator_error) => item_error.or(terminator_error),
-                            },
-                        )
-                    }))
+                Err(Error(item_error)) => {
+                    break Err(Error(append_error(
+                        input,
+                        SeparatedNonEmptyList,
+                        match zero_length_state.terminator_error() {
+                            None => item_error,
+                            Some(terminator_error) => item_error.or(terminator_error),
+                        },
+                    )))
                 }
+                Err(Failure(item_error)) => {
+                    break Err(Failure(append_error(
+                        input,
+                        SeparatedNonEmptyList,
+                        item_error,
+                    )))
+                }
+                Err(Incomplete(n)) => break Err(Incomplete(n)),
             };
 
             // Check zero-length matches
@@ -319,9 +325,7 @@ where
 
                 // Other kinds of errors should be returned immediately.
                 Err(err) => {
-                    break Err(
-                        err.map(move |err| ParseErr::append(input, SeparatedNonEmptyList, err))
-                    )
+                    break Err(err.map(move |err| append_error(input, SeparatedNonEmptyList, err)))
                 }
             };
 
@@ -332,7 +336,7 @@ where
                     break Err(Error(append_error(
                         input,
                         SeparatedNonEmptyList,
-                        ParseErr::or(separator_error, terminator_error),
+                        separator_error.or(terminator_error),
                     )))
                 }
                 Err(Failure(separator_error)) => {

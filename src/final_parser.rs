@@ -72,6 +72,16 @@ impl<I> RecreateContext<I> for I {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ByteOffset(pub usize);
 
+impl Display for ByteOffset {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        if f.alternate() {
+            write!(f, "byte offset {}", self.0)
+        } else {
+            write!(f, "{}", self.0)
+        }
+    }
+}
+
 impl<I: Offset> RecreateContext<I> for ByteOffset {
     fn recreate_context(original_input: I, tail: I) -> Self {
         ByteOffset(original_input.offset(&tail))

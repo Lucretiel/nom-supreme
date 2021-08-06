@@ -2,9 +2,20 @@
 
 ## Unreleased
 
+### Added
+
+- Add cutting versions of `Result` combinators, which return `Failure` in the event that the mapping function returns an `Err`.
+  - Add `map_res_cut`
+  - Add `parse_from_str_cut`
+- Reexport `ParserExt` at the toplevel
+
 ### Fixed
 
 - Fixed some edge case bugs in error handling in `multi`
+
+### Internal
+
+- Various internal refactorings of stuff in `ParserExt`
 
 ## 0.4.4
 

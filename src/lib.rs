@@ -30,3 +30,4 @@ pub mod parser_ext;
 pub mod tag;
 
 pub use from_str::parse_from_str;
+pub use parser_ext::ParserExt;

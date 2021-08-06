@@ -8,6 +8,14 @@ use nom::{
     Err as NomErr, InputLength, Offset, Parser, Slice,
 };
 
+/// No-op function that typechecks that its argument is a parser. Used to
+/// ensure there are no accidentally missing type bounds on the `ParserExt`
+/// methods
+#[inline(always)]
+fn must_be_a_parser<I, O, E, P: Parser<I, O, E>>(parser: P) -> P {
+    parser
+}
+
 /// Additional postfix parser combinators, as a complement to [`Parser`].
 /// Mostly these are postfix versions of the combinators in [`nom::combinator`]
 /// and [`nom::sequence`], with some additional combinators original to
@@ -49,7 +57,7 @@ pub trait ParserExt<I, O, E>: Parser<I, O, E> + Sized {
     #[inline]
     #[must_use = "Parsers do nothing unless used"]
     fn by_ref(&mut self) -> RefParser<Self> {
-        RefParser { parser: self }
+        must_be_a_parser(RefParser { parser: self })
     }
 
     /// Create a parser that must consume all of the input, or else return an
@@ -82,7 +90,7 @@ pub trait ParserExt<I, O, E>: Parser<I, O, E> + Sized {
         I: InputLength,
         E: ParseError<I>,
     {
-        AllConsuming { parser: self }
+        must_be_a_parser(AllConsuming { parser: self })
     }
 
     /// Create a parser that transforms `Incomplete` into `Error`.
@@ -114,7 +122,7 @@ pub trait ParserExt<I, O, E>: Parser<I, O, E> + Sized {
         I: Clone,
         E: ParseError<I>,
     {
-        Complete { parser: self }
+        must_be_a_parser(Complete { parser: self })
     }
 
     /// Create a parser that transforms `Error` into `Failure`. This will
@@ -140,7 +148,7 @@ pub trait ParserExt<I, O, E>: Parser<I, O, E> + Sized {
     #[inline]
     #[must_use = "Parsers do nothing unless used"]
     fn cut(self) -> Cut<Self> {
-        Cut { parser: self }
+        must_be_a_parser(Cut { parser: self })
     }
 
     /// Create a parser that applies a mapping function `func` to the output
@@ -175,11 +183,11 @@ pub trait ParserExt<I, O, E>: Parser<I, O, E> + Sized {
         E: FromExternalError<I, E2>,
         I: Clone,
     {
-        MapRes {
+        must_be_a_parser(MapRes {
             parser: self,
             func,
             phantom: PhantomData,
-        }
+        })
     }
 
     /// Create a parser that applies a mapping function `func` to the output
@@ -216,11 +224,11 @@ pub trait ParserExt<I, O, E>: Parser<I, O, E> + Sized {
         E: FromExternalError<I, E2>,
         I: Clone,
     {
-        MapResCut {
+        must_be_a_parser(MapResCut {
             parser: self,
             func,
             phantom: PhantomData,
-        }
+        })
     }
 
     /// Make this parser optional; if it fails to parse, instead it returns
@@ -253,7 +261,7 @@ pub trait ParserExt<I, O, E>: Parser<I, O, E> + Sized {
     where
         I: Clone,
     {
-        Optional { parser: self }
+        must_be_a_parser(Optional { parser: self })
     }
 
     /// Replace this parser's output with the entire input that was consumed
@@ -282,10 +290,10 @@ pub trait ParserExt<I, O, E>: Parser<I, O, E> + Sized {
     where
         I: Clone + Slice<RangeTo<usize>> + Offset,
     {
-        Recognize {
+        must_be_a_parser(Recognize {
             parser: self.with_recognized(),
             phantom: PhantomData,
-        }
+        })
     }
 
     /// Return the parsed value, but also return the entire input that was
@@ -314,7 +322,7 @@ pub trait ParserExt<I, O, E>: Parser<I, O, E> + Sized {
     where
         I: Clone + Slice<RangeTo<usize>> + Offset,
     {
-        WithRecognized { parser: self }
+        must_be_a_parser(WithRecognized { parser: self })
     }
 
     /// Replace this parser's output with a clone of `value` every time it
@@ -362,11 +370,11 @@ pub trait ParserExt<I, O, E>: Parser<I, O, E> + Sized {
     #[inline]
     #[must_use = "Parsers do nothing unless used"]
     fn value<T: Clone>(self, value: T) -> Value<T, Self, O> {
-        Value {
+        must_be_a_parser(Value {
             parser: self,
             value,
             phantom: PhantomData,
-        }
+        })
     }
 
     /// Require the output of this parser to pass a verifier function, or
@@ -403,10 +411,10 @@ pub trait ParserExt<I, O, E>: Parser<I, O, E> + Sized {
         I: Clone,
         E: ParseError<I>,
     {
-        Verify {
+        must_be_a_parser(Verify {
             parser: self,
             verifier,
-        }
+        })
     }
 
     /// Add some context to the parser. This context will be added to any
@@ -461,10 +469,10 @@ pub trait ParserExt<I, O, E>: Parser<I, O, E> + Sized {
         E: ContextError<I>,
         I: Clone,
     {
-        Context {
+        must_be_a_parser(Context {
             context,
             parser: self,
-        }
+        })
     }
 
     /// Add a terminator parser. The terminator will run after this parser,
@@ -492,11 +500,11 @@ pub trait ParserExt<I, O, E>: Parser<I, O, E> + Sized {
     where
         F: Parser<I, O2, E>,
     {
-        Terminated {
+        must_be_a_parser(Terminated {
             parser: self,
             terminator,
             phantom: PhantomData,
-        }
+        })
     }
 
     /// Make this parser precede another one. The successor parser will run
@@ -529,7 +537,7 @@ pub trait ParserExt<I, O, E>: Parser<I, O, E> + Sized {
     where
         F: Parser<I, O2, E>,
     {
-        successor.preceded_by(self)
+        must_be_a_parser(successor.preceded_by(self))
     }
 
     /// Make this parser preceded by another one. The `prefix` will run first,
@@ -563,11 +571,11 @@ pub trait ParserExt<I, O, E>: Parser<I, O, E> + Sized {
     where
         F: Parser<I, O2, E>,
     {
-        Preceded {
+        must_be_a_parser(Preceded {
             parser: self,
             prefix,
             phantom: PhantomData,
-        }
+        })
     }
 
     /// Make this parser delimited, requiring a `delimiter` as both a prefix and
@@ -599,11 +607,11 @@ pub trait ParserExt<I, O, E>: Parser<I, O, E> + Sized {
     where
         D: Parser<I, O2, E>,
     {
-        Delimited {
+        must_be_a_parser(Delimited {
             parser: self,
             delimiter,
             phantom: PhantomData,
-        }
+        })
     }
 
     /// Make this parser peeking: it runs normally but consumes no input.
@@ -630,7 +638,7 @@ pub trait ParserExt<I, O, E>: Parser<I, O, E> + Sized {
     where
         I: Clone,
     {
-        Peek { parser: self }
+        must_be_a_parser(Peek { parser: self })
     }
 
     /// Make this parser a negative lookahead: it will succeed if the subparser
@@ -659,10 +667,10 @@ pub trait ParserExt<I, O, E>: Parser<I, O, E> + Sized {
         I: Clone,
         E: ParseError<I>,
     {
-        Not {
+        must_be_a_parser(Not {
             parser: self,
             phantom: PhantomData,
-        }
+        })
     }
 
     /// Create a parser that parses something via [`FromStr`], using this
@@ -723,10 +731,10 @@ pub trait ParserExt<I, O, E>: Parser<I, O, E> + Sized {
         T: FromStr,
         E: FromExternalError<&'a str, T::Err>,
     {
-        FromStrParser {
+        must_be_a_parser(FromStrParser {
             parser: self,
             phantom: PhantomData,
-        }
+        })
     }
 
     /// Create a parser that parses something via [`FromStr`], using this
@@ -794,10 +802,10 @@ pub trait ParserExt<I, O, E>: Parser<I, O, E> + Sized {
         T: FromStr,
         E: FromExternalError<&'a str, T::Err>,
     {
-        FromStrCutParser {
+        must_be_a_parser(FromStrCutParser {
             parser: self,
             phantom: PhantomData,
-        }
+        })
     }
 }
 
@@ -969,8 +977,9 @@ where
 {
     #[inline]
     fn parse(&mut self, input: I) -> nom::IResult<I, T, E> {
-        let (input, _) = self.parser.parse(input)?;
-        Ok((input, self.value.clone()))
+        self.parser
+            .parse(input)
+            .map(|(input, _)| (input, self.value.clone()))
     }
 }
 

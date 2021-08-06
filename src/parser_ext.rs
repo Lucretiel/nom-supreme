@@ -182,6 +182,47 @@ pub trait ParserExt<I, O, E>: Parser<I, O, E> + Sized {
         }
     }
 
+    /// Create a parser that applies a mapping function `func` to the output
+    /// of the subparser. Any errors from `func` will be transformed into
+    /// parse failures via [`FromExternalError`]. This will
+    /// end the parse immediately, even if there are other branches that
+    /// could occur.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use nom::{Err, Parser};
+    /// # use nom::error::{Error, ErrorKind};
+    /// use nom::character::complete::alphanumeric1;
+    /// use nom_supreme::parser_ext::ParserExt;
+    ///
+    /// let mut parser = alphanumeric1.map_res_cut(|s: &str| s.parse());
+    ///
+    /// assert_eq!(parser.parse("10 abc"), Ok((" abc", 10)));
+    /// assert_eq!(
+    ///     parser.parse("<===>"),
+    ///     Err(Err::Error(Error{input: "<===>", code: ErrorKind::AlphaNumeric})),
+    /// );
+    /// assert_eq!(
+    ///     parser.parse("abc abc"),
+    ///     Err(Err::Failure(Error{input: "abc abc", code: ErrorKind::MapRes})),
+    /// );
+    /// ```
+    #[inline]
+    #[must_use = "Parsers do nothing unless used"]
+    fn map_res_cut<F, O2, E2>(self, func: F) -> MapResCut<Self, F, O, E2>
+    where
+        F: FnMut(O) -> Result<O2, E2>,
+        E: FromExternalError<I, E2>,
+        I: Clone,
+    {
+        MapResCut {
+            parser: self,
+            func,
+            phantom: PhantomData,
+        }
+    }
+
     /// Make this parser optional; if it fails to parse, instead it returns
     /// `None` with the input in the original position.
     ///
@@ -1012,6 +1053,35 @@ where
     }
 }
 
+/// Parser which runs a fallible mapping function on the output of the
+/// subparser. Any errors returned by the mapping function are transformed
+/// into a parse failure.
+///
+#[derive(Debug, Clone, Copy)]
+pub struct MapResCut<P, F, O, E2> {
+    parser: P,
+    func: F,
+    phantom: PhantomData<(O, E2)>,
+}
+
+impl<P, F, I, O, E, O2, E2> Parser<I, O2, E> for MapResCut<P, F, O, E2>
+where
+    P: Parser<I, O, E>,
+    F: FnMut(O) -> Result<O2, E2>,
+    E: FromExternalError<I, E2>,
+    I: Clone,
+{
+    #[inline]
+    fn parse(&mut self, input: I) -> nom::IResult<I, O2, E> {
+        let (tail, value) = self.parser.parse(input.clone())?;
+
+        (self.func)(value)
+            .map(move |value| (tail, value))
+            .map_err(move |err| {
+                NomErr::Failure(E::from_external_error(input, NomErrorKind::MapRes, err))
+            })
+    }
+}
 /// Parser which runs a subparser but doesn't consume any input
 #[derive(Debug, Clone, Copy)]
 pub struct Peek<P> {

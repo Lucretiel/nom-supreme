@@ -22,6 +22,14 @@
 
 #![deny(missing_docs)]
 
+macro_rules! express {
+    ($thing:ident . $method:ident ( $arg:expr )) => {{
+        let mut thing = $thing;
+        thing.$method($arg);
+        thing
+    }};
+}
+
 pub mod error;
 pub mod final_parser;
 mod from_str;

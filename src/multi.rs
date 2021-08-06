@@ -378,7 +378,6 @@ where
 
 #[cfg(test)]
 mod test_separated_terminated {
-    use cascade::cascade;
     use cool_asserts::assert_matches;
     use nom::{
         branch::alt,
@@ -402,7 +401,7 @@ mod test_separated_terminated {
             char(',').delimited_by(space0),
             char('.').preceded_by(space0),
             Vec::new,
-            |vec, num| cascade! {vec; ..push(num);},
+            |vec, num| express!(vec.push(num)),
         )
         .parse(input)
     }
@@ -506,7 +505,7 @@ mod test_separated_terminated {
             space0,
             char(';'),
             Vec::new,
-            |vec, num| cascade! {vec; ..push(num);},
+            |vec, num| express!(vec.push(num)),
         )
         .parse(input)
     }
@@ -553,7 +552,7 @@ mod test_separated_terminated {
             char('-').opt(),
             char(';'),
             Vec::new,
-            |vec, num| cascade! {vec; ..push(num);},
+            |vec, num| express!(vec.push(num)),
         )
         .parse(input)
     }
@@ -607,7 +606,7 @@ mod test_separated_terminated {
             char(','),
             char(',').opt().all_consuming(),
             Vec::new,
-            |vec, num| cascade! {vec; ..push(num);},
+            |vec, num| express!(vec.push(num)),
         )
         .parse(input)
     }

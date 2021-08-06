@@ -16,6 +16,7 @@
 ### Internal
 
 - Various internal refactorings of stuff in `ParserExt`
+- Remove `cascade` dependency
 
 ## 0.4.4
 

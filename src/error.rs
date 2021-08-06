@@ -6,7 +6,6 @@ use std::{
     fmt::{self, Debug, Display, Formatter, Write},
 };
 
-use cascade::cascade;
 use indent_write::fmt::IndentWriter;
 use joinery::JoinableIterator;
 use nom::{
@@ -16,6 +15,7 @@ use nom::{
 
 use crate::final_parser::{ExtractContext, RecreateContext};
 use crate::tag::TagError;
+
 
 /// Enum for generic things that can be expected by nom parsers
 ///
@@ -369,8 +369,6 @@ impl Display for StackContext {
 pub enum ErrorTree<I> {
     /// A specific error event at a specific location. Often this will indicate
     /// that something like a tag or character was expected at that location.
-    /// When used as part of a stack, it indicates some additional context for
-    /// the root error of the stack.
     Base {
         /// The location of this error in the input
         location: I,
@@ -390,9 +388,9 @@ pub enum ErrorTree<I> {
         contexts: Vec<(I, StackContext)>,
     },
 
-    /// A series of parsers were tried in order at the same location (for
-    /// instance, via the [`alt`](nom::branch::alt) combinator) and all of
-    /// them failed. All of the errors in this set are "siblings".
+    /// A series of parsers were tried at the same location (for instance, via
+    /// the [`alt`](nom::branch::alt) combinator) and all of them failed. All
+    /// of the errors in this set are "siblings".
     Alt(Vec<Self>),
     // TODO: in a future version of nom-supreme, elaborate on the specific
     // type combinations here. For instance:
@@ -511,10 +509,7 @@ impl<I: InputLength> ParseError<I> for ErrorTree<I> {
             // This is already a stack, so push on to it
             ErrorTree::Stack { contexts, base } => ErrorTree::Stack {
                 base,
-                contexts: cascade! {
-                    contexts;
-                    ..push(context);
-                },
+                contexts: express!(contexts.push(context))
             },
 
             // This isn't a stack; create a new stack
@@ -543,14 +538,11 @@ impl<I: InputLength> ParseError<I> for ErrorTree<I> {
         let siblings = match (self, other) {
             (ErrorTree::Alt(siblings1), ErrorTree::Alt(siblings2)) => {
                 match siblings1.capacity() >= siblings2.capacity() {
-                    true => cascade! {siblings1; ..extend(siblings2);},
-                    false => cascade! {siblings2; ..extend(siblings1);},
+                    true => express!(siblings1.extend(siblings2)),
+                    false => express!(siblings2.extend(siblings1)),
                 }
             }
-            (ErrorTree::Alt(siblings), err) | (err, ErrorTree::Alt(siblings)) => cascade! {
-                siblings;
-                ..push(err);
-            },
+            (ErrorTree::Alt(siblings), err) | (err, ErrorTree::Alt(siblings)) => express!(siblings.push(err)),
             (err1, err2) => vec![err1, err2],
         };
 
@@ -567,10 +559,7 @@ impl<I> ContextError<I> for ErrorTree<I> {
             // This is already a stack, so push on to it
             ErrorTree::Stack { contexts, base } => ErrorTree::Stack {
                 base,
-                contexts: cascade! {
-                    contexts;
-                    ..push(context);
-                },
+                contexts: express!(contexts.push(context)),
             },
 
             // This isn't a stack, create a new stack

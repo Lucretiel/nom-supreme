@@ -5,7 +5,7 @@
 ### Added
 
 - Add cutting versions of `Result` combinators, which return `Failure` in the event that the mapping function returns an `Err`.
-  - Add `map_res_cut`
+  - Add `map_res_cut` (thanks @loewenheim)
   - Add `parse_from_str_cut`
 - Reexport `ParserExt` at the toplevel
 

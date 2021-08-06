@@ -728,6 +728,77 @@ pub trait ParserExt<I, O, E>: Parser<I, O, E> + Sized {
             phantom: PhantomData,
         }
     }
+
+    /// Create a parser that parses something via [`FromStr`], using this
+    /// parser as a recognizer for the string to pass to
+    /// [`from_str`][FromStr::from_str]. This parser transforms any errors
+    /// from [`FromStr`] into [`Err::Failure`][NomErr::Failure], which will
+    /// end the overall parse immediately, even if there are other branches
+    /// that could be tried.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use nom::{Err, Parser, IResult};
+    /// # use nom::error::{Error, ErrorKind};
+    /// use nom::character::complete::alphanumeric1;
+    /// use nom_supreme::parser_ext::ParserExt;
+    ///
+    /// let mut parser = alphanumeric1.parse_from_str_cut();
+    ///
+    /// assert_eq!(parser.parse("123 abc"), Ok((" abc", 123)));
+    /// assert_eq!(
+    ///     parser.parse("<===>"),
+    ///     Err(Err::Error(Error{input: "<===>", code: ErrorKind::AlphaNumeric})),
+    /// );
+    /// assert_eq!(
+    ///     parser.parse("abc"),
+    ///     Err(Err::Failure(Error{input: "abc", code: ErrorKind::MapRes})),
+    /// );
+    /// ```
+    ///
+    /// # Parse error example
+    ///
+    /// If the [`FromStr`] parser fails, the error is recoverable from via
+    /// [`FromExternalError`]. In general, though, it's better practice to
+    /// ensure your recognizer won't allow invalid strings to be forwarded to
+    /// the [`FromStr`] parser
+    ///
+    /// ```rust
+    /// use std::num::ParseIntError;
+    /// use cool_asserts::assert_matches;
+    /// # use nom::{Err, Parser, IResult};
+    /// # use nom::error::{ErrorKind};
+    /// use nom::character::complete::alphanumeric1;
+    /// use nom_supreme::parser_ext::ParserExt;
+    /// use nom_supreme::error::{ErrorTree, BaseErrorKind};
+    ///
+    /// let mut parser = alphanumeric1.parse_from_str_cut();
+    ///
+    /// assert_matches!(parser.parse("123 abc"), Ok((" abc", 123)));
+    /// assert_matches!(
+    ///     parser.parse("abc"),
+    ///     Err(Err::Failure(ErrorTree::Base{
+    ///         location: "abc",
+    ///         kind: BaseErrorKind::External(err),
+    ///     })) => {
+    ///         let _err: &ParseIntError = err.downcast_ref().unwrap();
+    ///     },
+    /// );
+    /// ```
+    #[inline]
+    #[must_use = "Parsers do nothing unless used"]
+    fn parse_from_str_cut<'a, T>(self) -> FromStrCutParser<Self, T>
+    where
+        Self: Parser<&'a str, &'a str, E>,
+        T: FromStr,
+        E: FromExternalError<&'a str, T::Err>,
+    {
+        FromStrCutParser {
+            parser: self,
+            phantom: PhantomData,
+        }
+    }
 }
 
 impl<I, O, E, P> ParserExt<I, O, E> for P where P: Parser<I, O, E> {}
@@ -1145,6 +1216,35 @@ where
         match value_str.parse() {
             Ok(value) => Ok((tail, value)),
             Err(parse_err) => Err(NomErr::Error(E::from_external_error(
+                input,
+                NomErrorKind::MapRes,
+                parse_err,
+            ))),
+        }
+    }
+}
+
+/// Parser which parses something via [`FromStr`], using a subparser as a
+/// recognizer for the string to pass to [`from_str`][FromStr::from_str].
+/// Returns [`Err::Failure`][NomErr::Failure] if the [`FromStr`] parse fails.
+#[derive(Debug, Clone, Copy)]
+pub struct FromStrCutParser<P, T> {
+    parser: P,
+    phantom: PhantomData<T>,
+}
+
+impl<'a, T, E, P> Parser<&'a str, T, E> for FromStrCutParser<P, T>
+where
+    P: Parser<&'a str, &'a str, E>,
+    T: FromStr,
+    E: FromExternalError<&'a str, T::Err>,
+{
+    #[inline]
+    fn parse(&mut self, input: &'a str) -> nom::IResult<&'a str, T, E> {
+        let (tail, value_str) = self.parser.parse(input)?;
+        match value_str.parse() {
+            Ok(value) => Ok((tail, value)),
+            Err(parse_err) => Err(NomErr::Failure(E::from_external_error(
                 input,
                 NomErrorKind::MapRes,
                 parse_err,

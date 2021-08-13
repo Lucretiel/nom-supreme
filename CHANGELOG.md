@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Internal
+
+- Minor implementation refactors
+
 ## 0.4.5
 
 ### Added

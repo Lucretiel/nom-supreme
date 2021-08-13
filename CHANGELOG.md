@@ -2,9 +2,14 @@
 
 ## Unreleased
 
+### Added
+
+- Added `array` and `separated_array` to `ParserExt`
+
 ### Internal
 
 - Minor implementation refactors
+- Add `brownstone` dependency
 
 ## 0.4.5
 

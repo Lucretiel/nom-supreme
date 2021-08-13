@@ -807,6 +807,116 @@ pub trait ParserExt<I, O, E>: Parser<I, O, E> + Sized {
             phantom: PhantomData,
         })
     }
+
+    /// Create a parser that parses a fixed-size array by running this parser
+    /// in a loop.
+    ///
+    /// The returned parser implements [`Parser`] generically over any
+    /// `const N: usize`, which means it can be used to parse arrays of any
+    /// length
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use cool_asserts::assert_matches;
+    /// use nom::character::complete::digit1;
+    /// # use nom::{Parser, Err, IResult};
+    /// # use nom::error::{ErrorKind, Error};
+    /// use nom_supreme::ParserExt;
+    /// use nom_supreme::tag::complete::tag;
+    ///
+    /// let mut parser = digit1
+    ///     .terminated(tag(", "))
+    ///     .parse_from_str()
+    ///     .array();
+    ///
+    /// assert_matches!(parser.parse("123, 456, 789, abc"), Ok(("789, abc", [123, 456])));
+    /// assert_matches!(parser.parse("123, 456, 789, abc"), Ok(("abc", [123, 456, 789])));
+    ///
+    /// let res: Result<(&str, [u16; 4]), Err<Error<&str>>> = parser.parse("123, 456, 789, abc");
+    /// assert_matches!(
+    ///     res,
+    ///     Err(Err::Error(Error{input: "abc", code: ErrorKind::Digit}))
+    /// );
+    /// ```
+    ///
+    /// Note that this parser does not attach any additional context to the
+    /// error in the event of a parser; consider using [`context`] on the
+    /// item parser or array parser to add additional information about where
+    /// in the input there was a parse failure.
+    #[inline]
+    #[must_use = "Parsers do nothing unless used"]
+    fn array(self) -> ArrayParser<Self> {
+        ArrayParser { parser: self }
+    }
+
+    /// Create a parser that parses a fixed-size array by running this parser
+    /// in a loop, parsing a separator in between each element.
+    ///
+    /// The returned parser implements [`Parser`] generically over any
+    /// `const N: usize`, which means it can be used to parse arrays of any
+    /// length
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use std::net::{Ipv4Addr, SocketAddrV4};
+    /// use cool_asserts::assert_matches;
+    /// use nom::character::complete::{char, digit1};
+    /// # use nom::{Parser, Err, IResult};
+    /// # use nom::error::{ErrorKind, Error};
+    /// use nom_supreme::ParserExt;
+    /// use nom_supreme::tag::complete::tag;
+    ///
+    /// let mut parser = digit1
+    ///     .parse_from_str()
+    ///     .separated_array(char('.'))
+    ///     .map(Ipv4Addr::from)
+    ///     .terminated(char(':'))
+    ///     .and(digit1.parse_from_str())
+    ///     .map(|(ip, port)| SocketAddrV4::new(ip, port));
+    ///
+    /// let (_tail, socket_addr) = parser.parse("192.168.0.1:80").unwrap();
+    /// assert_eq!(socket_addr.ip().octets(), [192, 168, 0, 1]);
+    /// assert_eq!(socket_addr.port(), 80);
+    ///
+    /// assert_matches!(
+    ///     parser.parse("192.168.0.abc:80"),
+    ///     Err(Err::Error(Error{input: "abc:80", code: ErrorKind::Digit})),
+    /// );
+    ///
+    /// assert_matches!(
+    ///     parser.parse("192.168.0.1"),
+    ///     Err(Err::Error(Error{input: "", code: ErrorKind::Char})),
+    /// );
+    ///
+    /// assert_matches!(
+    ///     parser.parse("192.168.0.1000:80"),
+    ///     Err(Err::Error(Error{input: "1000:80", code: ErrorKind::MapRes})),
+    /// );
+    ///
+    /// assert_matches!(
+    ///     parser.parse("192.168.10abc"),
+    ///     Err(Err::Error(Error{input: "abc", code: ErrorKind::Char})),
+    /// );
+    /// ```
+    ///
+    /// Note that this parser does not attach any additional context to the
+    /// error in the event of a parser; consider using [`context`] on the
+    /// item parser or array parser to add additional information about where
+    /// in the input there was a parse failure.
+    #[inline]
+    #[must_use = "Parsers do nothing unless used"]
+    fn separated_array<F, O2>(self, separator: F) -> SeparatedArrayParser<Self, F, O2>
+    where
+        F: Parser<I, O2, E>,
+    {
+        SeparatedArrayParser {
+            parser: self,
+            separator,
+            phantom: PhantomData,
+        }
+    }
 }
 
 impl<I, O, E, P> ParserExt<I, O, E> for P where P: Parser<I, O, E> {}
@@ -1259,5 +1369,71 @@ where
                 parse_err,
             ))),
         }
+    }
+}
+
+/// Parser which parses an array by running a subparser in a loop a fixed
+/// number of times.
+#[derive(Debug, Clone, Copy)]
+pub struct ArrayParser<P> {
+    parser: P,
+}
+
+impl<P, I, O, E, const N: usize> Parser<I, [O; N], E> for ArrayParser<P>
+where
+    P: Parser<I, O, E>,
+{
+    fn parse(&mut self, input: I) -> nom::IResult<I, [O; N], E> {
+        // TODO: create a folding version of brownstone::try_build so that
+        // this Some trick isn't necessary
+        let mut input = Some(input);
+
+        brownstone::try_build(|| {
+            let (tail, value) = self.parser.parse(input.take().unwrap())?;
+            input = Some(tail);
+            Ok(value)
+        })
+        .map(|array| (input.unwrap(), array))
+        .map_err(|err| err.error)
+    }
+}
+
+/// Parser which parses an array by running a subparser in a loop a fixed
+/// number of times, parsing a separator between each item.
+#[derive(Debug, Clone, Copy)]
+pub struct SeparatedArrayParser<P1, P2, O2> {
+    parser: P1,
+    separator: P2,
+    phantom: PhantomData<O2>,
+}
+
+impl<I, O1, O2, E, P1, P2, const N: usize> Parser<I, [O1; N], E>
+    for SeparatedArrayParser<P1, P2, O2>
+where
+    P1: Parser<I, O1, E>,
+    P2: Parser<I, O2, E>,
+{
+    fn parse(&mut self, input: I) -> nom::IResult<I, [O1; N], E> {
+        // TODO: create a folding version of brownstone::try_build so that
+        // this Some trick isn't necessary
+        let mut input = Some(input);
+
+        brownstone::try_build_indexed(|idx| {
+            let local_input = input.take().unwrap();
+
+            let (tail, value) = match idx {
+                0 => self.parser.parse(local_input),
+                _ => self
+                    .parser
+                    .by_ref()
+                    .preceded_by(self.separator.by_ref())
+                    .parse(local_input),
+            }?;
+
+            input = Some(tail);
+            Ok(value)
+        })
+        .map(|array| (input.unwrap(), array))
+        .map_err(|err| err.error)
     }
 }

@@ -125,11 +125,8 @@ where
         separator,
         terminator,
         Collection::default,
-        |mut collection, item| {
-            // TODO: use extend_one
-            collection.extend(iter::once(item));
-            collection
-        },
+        // TODO: use extend_one
+        |collection, item| express!(collection.extend(iter::once(item))),
     )
 }
 

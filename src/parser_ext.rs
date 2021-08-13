@@ -841,9 +841,9 @@ pub trait ParserExt<I, O, E>: Parser<I, O, E> + Sized {
     /// ```
     ///
     /// Note that this parser does not attach any additional context to the
-    /// error in the event of a parser; consider using [`context`] on the
-    /// item parser or array parser to add additional information about where
-    /// in the input there was a parse failure.
+    /// error in the event of a parser; consider using [`context`][Self::context]
+    /// on the item parser or array parser to add additional information about
+    /// where in the input there was a parse failure.
     #[inline]
     #[must_use = "Parsers do nothing unless used"]
     fn array(self) -> ArrayParser<Self> {
@@ -902,9 +902,9 @@ pub trait ParserExt<I, O, E>: Parser<I, O, E> + Sized {
     /// ```
     ///
     /// Note that this parser does not attach any additional context to the
-    /// error in the event of a parser; consider using [`context`] on the
-    /// item parser or array parser to add additional information about where
-    /// in the input there was a parse failure.
+    /// error in the event of a parser; consider using [`context`][Self::context]
+    /// on the item, separator, or array parsers to add additional information
+    /// about where in the input there was a parse failure.
     #[inline]
     #[must_use = "Parsers do nothing unless used"]
     fn separated_array<F, O2>(self, separator: F) -> SeparatedArrayParser<Self, F, O2>

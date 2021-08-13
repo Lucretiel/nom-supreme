@@ -22,10 +22,15 @@
 
 #![deny(missing_docs)]
 
+/// Call a method or methods on an object, and then return the original object.
+///
+/// The input to this macro is the methods calls written in a chaining style:
+/// `express!(vec.push(1).push(2).push(3))`, which is transformed into a series
+/// of calls on the original object, then returning that object.
 macro_rules! express {
-    ($thing:ident . $method:ident ( $arg:expr )) => {{
+    ($thing:ident $( . $method:ident ( $($args:tt)* ) )*) => {{
         let mut thing = $thing;
-        thing.$method($arg);
+        $( thing.$method($($args)*); )*
         thing
     }};
 }

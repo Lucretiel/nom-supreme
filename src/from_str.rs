@@ -25,11 +25,13 @@ use crate::parser_ext::ParserExt;
 /// // to parse.
 /// assert_eq!(parse_int("-125"),  Err(Err::Error(Error{input: "-125", code: ErrorKind::Digit})));
 /// ```
-pub fn parse_from_str<'a, F, T, E>(recognizer: F) -> impl Parser<&'a str, T, E>
+pub fn parse_from_str<'a, Input, Output, Error>(
+    recognizer: impl Parser<Input, &'a str, Error>,
+) -> impl Parser<Input, Output, Error>
 where
-    F: Parser<&'a str, &'a str, E> + Sized,
-    T: FromStr,
-    E: FromExternalError<&'a str, T::Err>,
+    Input: Clone,
+    Output: FromStr,
+    Error: FromExternalError<Input, Output::Err>,
 {
     recognizer.parse_from_str()
 }

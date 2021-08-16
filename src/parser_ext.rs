@@ -727,9 +727,10 @@ pub trait ParserExt<I, O, E>: Parser<I, O, E> + Sized {
     #[must_use = "Parsers do nothing unless used"]
     fn parse_from_str<'a, T>(self) -> FromStrParser<Self, T>
     where
-        Self: Parser<&'a str, &'a str, E>,
+        Self: Parser<I, &'a str, E>,
+        I: Clone,
         T: FromStr,
-        E: FromExternalError<&'a str, T::Err>,
+        E: FromExternalError<I, T::Err>,
     {
         must_be_a_parser(FromStrParser {
             parser: self,
@@ -1323,15 +1324,16 @@ pub struct FromStrParser<P, T> {
     phantom: PhantomData<T>,
 }
 
-impl<'a, T, E, P> Parser<&'a str, T, E> for FromStrParser<P, T>
+impl<'a, T, I, E, P> Parser<I, T, E> for FromStrParser<P, T>
 where
-    P: Parser<&'a str, &'a str, E>,
+    P: Parser<I, &'a str, E>,
+    I: Clone,
     T: FromStr,
-    E: FromExternalError<&'a str, T::Err>,
+    E: FromExternalError<I, T::Err>,
 {
     #[inline]
-    fn parse(&mut self, input: &'a str) -> nom::IResult<&'a str, T, E> {
-        let (tail, value_str) = self.parser.parse(input)?;
+    fn parse(&mut self, input: I) -> nom::IResult<I, T, E> {
+        let (tail, value_str) = self.parser.parse(input.clone())?;
         match value_str.parse() {
             Ok(value) => Ok((tail, value)),
             Err(parse_err) => Err(NomErr::Error(E::from_external_error(
@@ -1341,6 +1343,44 @@ where
             ))),
         }
     }
+}
+
+#[test]
+fn from_str_parser_non_str_input() {
+    use std::str::from_utf8;
+
+    use cool_asserts::assert_matches;
+    use nom::{
+        character::complete::{char, digit1},
+        Err as NomErr,
+    };
+
+    use crate::error::{BaseErrorKind, ErrorTree, Expectation};
+
+    let mut parser = digit1
+        .preceded_by(char('-'))
+        .or(digit1)
+        .recognize()
+        .map_res(from_utf8)
+        .parse_from_str();
+
+    assert_matches!(parser.parse(b"-123"), Ok((b"", -123)));
+
+    let branches = assert_matches!(parser.parse(b"abc"), Err(NomErr::Error(ErrorTree::Alt(branches))) => branches);
+
+    assert_matches!(
+        branches.as_slice(),
+        [
+            ErrorTree::Base {
+                location: b"abc",
+                kind: BaseErrorKind::Expected(Expectation::Char('-'))
+            },
+            ErrorTree::Base {
+                location: b"abc",
+                kind: BaseErrorKind::Expected(Expectation::Digit)
+            }
+        ]
+    )
 }
 
 /// Parser which parses something via [`FromStr`], using a subparser as a

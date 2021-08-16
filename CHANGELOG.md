@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.0
+
+### Changed
+
+- `parse_from_str` now works with parsers over any input type.
+
 ## 0.4.6
 
 ### Added

@@ -15,7 +15,7 @@ repository = "https://github.com/Lucretiel/nom-supreme"
 indent_write = "2.0.0"
 joinery = "2.0.0"
 memchr = "2.3.4"
-nom = "6.0.1"
+nom = "7.0.0"
 brownstone = "1.0.0"
 
 [dev-dependencies]

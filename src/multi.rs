@@ -45,9 +45,9 @@ a parse error.
 use std::{convert::Infallible, iter};
 
 use nom::{
-    error::{append_error, ErrorKind::SeparatedNonEmptyList, FromExternalError, ParseError},
-    Err::{Error, Failure, Incomplete},
-    Parser,
+    error::{ErrorKind::SeparatedNonEmptyList, FromExternalError, ParseError},
+    Err::Error,
+    InputLength, Parser,
 };
 
 /**
@@ -116,7 +116,7 @@ pub fn collect_separated_terminated<
     terminator: impl Parser<Input, TermOutput, ParseErr>,
 ) -> impl Parser<Input, Collection, ParseErr>
 where
-    Input: Clone + PartialEq,
+    Input: Clone + InputLength,
     ParseErr: ParseError<Input>,
     Collection: Default + Extend<ParseOutput>,
 {
@@ -151,7 +151,7 @@ pub fn parse_separated_terminated<Input, ParseOutput, SepOutput, TermOutput, Par
     mut fold: impl FnMut(Accum, ParseOutput) -> Accum,
 ) -> impl Parser<Input, Accum, ParseErr>
 where
-    Input: Clone + PartialEq,
+    Input: Clone + InputLength,
     ParseErr: ParseError<Input>,
 {
     parse_separated_terminated_impl(
@@ -190,7 +190,7 @@ pub fn parse_separated_terminated_res<
     fold: impl FnMut(Accum, ParseOutput) -> Result<Accum, FoldErr>,
 ) -> impl Parser<Input, Accum, ParseErr>
 where
-    Input: Clone + PartialEq,
+    Input: Clone + InputLength,
     ParseErr: ParseError<Input> + FromExternalError<Input, FoldErr>,
 {
     parse_separated_terminated_impl(parser, separator, terminator, init, fold, |input, err| {
@@ -243,7 +243,7 @@ fn parse_separated_terminated_impl<
     mut build_error: impl FnMut(Input, FoldErr) -> ParseErr,
 ) -> impl Parser<Input, Accum, ParseErr>
 where
-    Input: Clone + PartialEq,
+    Input: Clone + InputLength,
     ParseErr: ParseError<Input>,
 {
     move |mut input: Input| {
@@ -263,27 +263,16 @@ where
             let (tail, value) = match parser.parse(input.clone()) {
                 Ok(success) => success,
                 Err(Error(item_error)) => {
-                    break Err(Error(append_error(
-                        input,
-                        SeparatedNonEmptyList,
-                        match zero_length_state.terminator_error() {
-                            None => item_error,
-                            Some(terminator_error) => item_error.or(terminator_error),
-                        },
-                    )))
+                    break Err(Error(match zero_length_state.terminator_error() {
+                        None => item_error,
+                        Some(terminator_error) => item_error.or(terminator_error),
+                    }))
                 }
-                Err(Failure(item_error)) => {
-                    break Err(Failure(append_error(
-                        input,
-                        SeparatedNonEmptyList,
-                        item_error,
-                    )))
-                }
-                Err(Incomplete(n)) => break Err(Incomplete(n)),
+                Err(err) => break Err(err),
             };
 
             // Check zero-length matches
-            zero_length_state = match (input == tail, zero_length_state) {
+            zero_length_state = match (input.input_len() == tail.input_len(), zero_length_state) {
                 // If both the item and the separator had a zero length match,
                 // we're hanging. Bail.
                 //
@@ -321,33 +310,20 @@ where
                 Err(Error(err)) => err,
 
                 // Other kinds of errors should be returned immediately.
-                Err(err) => {
-                    break Err(err.map(move |err| append_error(input, SeparatedNonEmptyList, err)))
-                }
+                Err(err) => break Err(err),
             };
 
             // No terminator, so instead try to find a separator
             let tail = match separator.parse(input.clone()) {
                 Ok((tail, _)) => tail,
                 Err(Error(separator_error)) => {
-                    break Err(Error(append_error(
-                        input,
-                        SeparatedNonEmptyList,
-                        separator_error.or(terminator_error),
-                    )))
+                    break Err(Error(separator_error.or(terminator_error)))
                 }
-                Err(Failure(separator_error)) => {
-                    break (Err(Failure(append_error(
-                        input,
-                        SeparatedNonEmptyList,
-                        separator_error,
-                    ))))
-                }
-                Err(Incomplete(n)) => break Err(Incomplete(n)),
+                Err(err) => break Err(err),
             };
 
             // Check zero-length matches
-            zero_length_state = match (input == tail, zero_length_state) {
+            zero_length_state = match (input.input_len() == tail.input_len(), zero_length_state) {
                 // If both the separator and the item had a zero length match,
                 // we're hanging. Bail.
                 (true, ZeroLengthParseState::Item) => {
@@ -385,7 +361,7 @@ mod test_separated_terminated {
 
     use crate::parser_ext::ParserExt;
     use crate::{
-        error::{BaseErrorKind, ErrorTree, Expectation, StackContext},
+        error::{BaseErrorKind, ErrorTree, Expectation},
         parse_from_str,
     };
 
@@ -430,13 +406,10 @@ mod test_separated_terminated {
 
         assert_matches!(
             err,
-            Err::Error(ErrorTree::Stack{contexts, base}) => {
-                assert_eq!(contexts, [("abc", StackContext::Kind(ErrorKind::SeparatedNonEmptyList))]);
-                assert_matches!(
-                    *base,
-                    ErrorTree::Base{location: "abc", kind: BaseErrorKind::Expected(Expectation::Digit)},
-                );
-            }
+            Err::Error(ErrorTree::Base {
+                location: "abc",
+                kind: BaseErrorKind::Expected(Expectation::Digit)
+            })
         );
     }
 
@@ -446,13 +419,20 @@ mod test_separated_terminated {
     fn terminator_separator_miss() {
         let err = parse_number_list("10, 20 30.").unwrap_err();
 
-        assert_matches!(err, Err::Error(ErrorTree::Stack{contexts, base}) => {
-            assert_eq!(contexts, [(" 30.", StackContext::Kind(ErrorKind::SeparatedNonEmptyList))]);
-            assert_matches!(*base, ErrorTree::Alt(choices) => assert_matches!(choices.as_slice(), [
-                ErrorTree::Base{location: "30.", kind: BaseErrorKind::Expected(Expectation::Char(','))},
-                ErrorTree::Base{location: "30.", kind: BaseErrorKind::Expected(Expectation::Char('.'))},
-            ]));
-        });
+        let choices = assert_matches!(err, Err::Error(ErrorTree::Alt(choices)) => choices);
+        assert_matches!(
+            choices.as_slice(),
+            [
+                ErrorTree::Base {
+                    location: "30.",
+                    kind: BaseErrorKind::Expected(Expectation::Char(','))
+                },
+                ErrorTree::Base {
+                    location: "30.",
+                    kind: BaseErrorKind::Expected(Expectation::Char('.'))
+                },
+            ]
+        );
     }
 
     /// Test that a terminator is required, even at EoF
@@ -460,22 +440,20 @@ mod test_separated_terminated {
     fn required_terminator() {
         let err = parse_number_list("1, 2, 3").unwrap_err();
 
-        assert_matches!(err, Err::Error(ErrorTree::Stack{contexts, base}) => {
-            assert_eq!(contexts, [("", StackContext::Kind(ErrorKind::SeparatedNonEmptyList))]);
-            assert_matches!(*base, ErrorTree::Alt(choices) => assert_matches!(
-                choices.as_slice(),
-                [
-                    ErrorTree::Base {
-                        location: "",
-                        kind: BaseErrorKind::Expected(Expectation::Char(','))
-                    },
-                    ErrorTree::Base {
-                        location: "",
-                        kind: BaseErrorKind::Expected(Expectation::Char('.'))
-                    },
-                ]
-            ));
-        });
+        let choices = assert_matches!(err, Err::Error(ErrorTree::Alt(choices)) => choices);
+        assert_matches!(
+            choices.as_slice(),
+            [
+                ErrorTree::Base {
+                    location: "",
+                    kind: BaseErrorKind::Expected(Expectation::Char(','))
+                },
+                ErrorTree::Base {
+                    location: "",
+                    kind: BaseErrorKind::Expected(Expectation::Char('.'))
+                },
+            ]
+        );
     }
 
     /// Test that a parse failure from the item parser includes only that error
@@ -484,13 +462,13 @@ mod test_separated_terminated {
     fn item_error() {
         let err = parse_number_list("1, 2, abc.").unwrap_err();
 
-        assert_matches!(err, Err::Error(ErrorTree::Stack{base, contexts}) => {
-            assert_eq!(contexts, [("abc.", StackContext::Kind(ErrorKind::SeparatedNonEmptyList))]);
-            assert_matches!(*base, ErrorTree::Base {
+        assert_matches!(
+            err,
+            Err::Error(ErrorTree::Base {
                 location: "abc.",
                 kind: BaseErrorKind::Expected(Expectation::Digit),
-            });
-        });
+            })
+        );
     }
 
     /// Parse a series of numbers ending in periods, separated by 0 or more
@@ -522,22 +500,20 @@ mod test_separated_terminated {
     fn zero_length_separator_item_term_error() {
         let err = parse_number_dot_list("1.2.3.abc.;").unwrap_err();
 
-        assert_matches!(err, Err::Error(ErrorTree::Stack{contexts, base}) => {
-            assert_eq!(contexts, [("abc.;", StackContext::Kind(ErrorKind::SeparatedNonEmptyList))]);
-            assert_matches!(*base, ErrorTree::Alt(choices) => assert_matches!(
-                choices.as_slice(),
-                [
-                    ErrorTree::Base {
-                        location: "abc.;",
-                        kind: BaseErrorKind::Expected(Expectation::Digit)
-                    },
-                    ErrorTree::Base {
-                        location: "abc.;",
-                        kind: BaseErrorKind::Expected(Expectation::Char(';'))
-                    },
-                ]
-            ));
-        });
+        let choices = assert_matches!(err, Err::Error(ErrorTree::Alt(choices)) => choices);
+        assert_matches!(
+            choices.as_slice(),
+            [
+                ErrorTree::Base {
+                    location: "abc.;",
+                    kind: BaseErrorKind::Expected(Expectation::Digit)
+                },
+                ErrorTree::Base {
+                    location: "abc.;",
+                    kind: BaseErrorKind::Expected(Expectation::Char(';'))
+                },
+            ]
+        );
     }
 
     /// Parse a series of runs of 1 or more digits or 0 more more letters, separated by

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.0
+
+### Changed
+
+- Add compatibility with Nom 7
+  - Nom 6 may be dropped in a future release, but for now there haven't been any breaking changes that are relevant to nom-supreme
+- The separated_terminated parsers no longer add their own error context
+- Minor internal changes to errors
+
 ## 0.5.0
 
 ### Changed

@@ -16,7 +16,6 @@ use nom::{
 use crate::final_parser::{ExtractContext, RecreateContext};
 use crate::tag::TagError;
 
-
 /// Enum for generic things that can be expected by nom parsers
 ///
 /// Certain nom parsers (think [`digit1`], [`tag`], or [`space1`]) are "base
@@ -509,7 +508,7 @@ impl<I: InputLength> ParseError<I> for ErrorTree<I> {
             // This is already a stack, so push on to it
             ErrorTree::Stack { contexts, base } => ErrorTree::Stack {
                 base,
-                contexts: express!(contexts.push(context))
+                contexts: express!(contexts.push(context)),
             },
 
             // This isn't a stack; create a new stack
@@ -542,7 +541,9 @@ impl<I: InputLength> ParseError<I> for ErrorTree<I> {
                     false => express!(siblings2.extend(siblings1)),
                 }
             }
-            (ErrorTree::Alt(siblings), err) | (err, ErrorTree::Alt(siblings)) => express!(siblings.push(err)),
+            (ErrorTree::Alt(siblings), err) | (err, ErrorTree::Alt(siblings)) => {
+                express!(siblings.push(err))
+            }
             (err1, err2) => vec![err1, err2],
         };
 
@@ -585,7 +586,10 @@ impl<I> TagError<I, &'static str> for ErrorTree<I> {
     fn from_tag(location: I, tag: &'static str) -> Self {
         ErrorTree::Base {
             location,
-            kind: BaseErrorKind::Expected(Expectation::Tag(tag)),
+            kind: BaseErrorKind::Expected(match tag {
+                "\r\n" => Expectation::CrLf,
+                tag => Expectation::Tag(tag),
+            }),
         }
     }
 }

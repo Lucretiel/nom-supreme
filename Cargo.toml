@@ -11,12 +11,17 @@ repository = "https://github.com/Lucretiel/nom-supreme"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+default = ["error", "std"]
+std = ["memchr/std", "nom/std"]
+error = ["std", "indent_write", "joinery"]
+
 [dependencies]
-indent_write = "2.0.0"
-joinery = "2.0.0"
-memchr = "2.3.4"
-nom = ">=6.0.1, <8.0.0"
-brownstone = "1.0.0"
+indent_write = {version = "2.0.0", optional = true }
+joinery = {version = "2.0.0", optional = true }
+memchr = {version = "2.3.4", default-features = false }
+nom = { version = ">=6.0.1, <8.0.0", default-features = false }
+brownstone = {version = "1.0.0", default-features = false }
 
 [dev-dependencies]
 cool_asserts = "1.0.3"

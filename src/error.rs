@@ -1,5 +1,6 @@
 //! An error type, [`ErrorTree`], designed to retain much more useful
 //! information about parse failures than the built-in nom error types.
+//! Requires the `error` feature to be enabled.
 
 use std::{
     error::Error,

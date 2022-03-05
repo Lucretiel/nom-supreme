@@ -1,7 +1,7 @@
 //! Extensions to the nom [`Parser`][nom::Parser] trait which add postfix
 //! versions of the common combinators. See [`ParserExt`] for details.
 
-use std::{marker::PhantomData, ops::RangeTo, str::FromStr};
+use core::{marker::PhantomData, ops::RangeTo, str::FromStr};
 
 use nom::{
     error::{ContextError, ErrorKind as NomErrorKind, FromExternalError, ParseError},
@@ -1347,9 +1347,10 @@ where
     }
 }
 
+#[cfg(feature = "error")]
 #[test]
 fn from_str_parser_non_str_input() {
-    use std::str::from_utf8;
+    use core::str::from_utf8;
 
     use cool_asserts::assert_matches;
     use nom::{

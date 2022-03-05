@@ -42,7 +42,7 @@ a parse error.
 [`peek`]: crate::parser_ext::ParserExt::peek
 */
 
-use std::{convert::Infallible, iter};
+use core::{convert::Infallible, iter};
 
 use nom::{
     error::{ErrorKind::SeparatedNonEmptyList, FromExternalError, ParseError},
@@ -349,7 +349,7 @@ where
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "error"))]
 mod test_separated_terminated {
     use cool_asserts::assert_matches;
     use nom::{

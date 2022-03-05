@@ -5,7 +5,10 @@
 //! specific tag that was expected. This allows the error message to report
 //! something like `Expected tag: "true"` instead of just `Error: Tag`.
 
-use nom::error::{Error, ErrorKind, ParseError, VerboseError};
+use nom::error::{Error, ErrorKind};
+
+#[cfg(feature = "std")]
+use nom::error::{ParseError, VerboseError};
 
 /// Similar to [`FromExternalError`][nom::error::FromExternalError] and
 /// [`ContextError`][nom::error::ContextError], this trait allows a parser to
@@ -38,6 +41,7 @@ impl<I, T> TagError<I, T> for Error<I> {
     }
 }
 
+#[cfg(feature = "std")]
 impl<I, T> TagError<I, T> for VerboseError<I> {
     fn from_tag(input: I, _tag: T) -> Self {
         VerboseError::from_error_kind(input, ErrorKind::Tag)

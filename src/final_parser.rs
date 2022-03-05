@@ -1,11 +1,14 @@
 //! Entry point layer into nom parsers. See [`final_parser`] for details.
 
-use std::fmt::{self, Display, Formatter};
+use core::fmt::{self, Display, Formatter};
 
 use nom::{
-    error::{Error, ErrorKind, ParseError, VerboseError},
+    error::{Error, ErrorKind, ParseError},
     Err as NomErr, InputLength, Offset, Parser,
 };
+
+#[cfg(feature = "std")]
+use nom::error::VerboseError;
 
 use crate::parser_ext::ParserExt;
 
@@ -188,6 +191,7 @@ where
     }
 }
 
+#[cfg(feature = "std")]
 impl<I, T> ExtractContext<I, VerboseError<T>> for VerboseError<I>
 where
     T: RecreateContext<I>,

@@ -1,6 +1,6 @@
 [package]
 name = "nom-supreme"
-version = "0.6.0"
+version = "0.7.0"
 authors = ["Nathan West <Lucretiel@gmail.com>"]
 edition = "2018"
 
@@ -12,16 +12,17 @@ repository = "https://github.com/Lucretiel/nom-supreme"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-default = ["error", "std"]
 std = ["memchr/std", "nom/std"]
 error = ["std", "indent_write", "joinery"]
 
 [dependencies]
-indent_write = {version = "2.0.0", optional = true }
-joinery = {version = "2.0.0", optional = true }
 memchr = {version = "2.3.4", default-features = false }
 nom = { version = ">=6.0.1, <8.0.0", default-features = false }
 brownstone = {version = "1.0.0", default-features = false }
+
+# Only needed for printing errors
+indent_write = {version = "2.0.0", optional = true }
+joinery = {version = "2.0.0", optional = true }
 
 [dev-dependencies]
 cool_asserts = "1.0.3"

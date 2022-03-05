@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.0
+
+### Changed
+
+- Add `std` and `error` features
+  - `mod error` is gated behind `error` and requires `std`
+
 ## 0.6.0
 
 ### Changed

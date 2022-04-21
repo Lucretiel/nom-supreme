@@ -14,24 +14,24 @@ impl<I, C> ContextError<I, C> for () {
     fn add_context(_location: I, _ctx: C, _other: Self) -> Self {}
 }
 
-impl<I, T> ContextError<I, T> for (I, ErrorKind) {
-    fn add_context(_location: I, _ctx: T, other: Self) -> Self {
+impl<I, C> ContextError<I, C> for (I, ErrorKind) {
+    fn add_context(_location: I, _ctx: C, other: Self) -> Self {
         other
     }
 }
 
-impl<I, T> ContextError<I, T> for Error<I> {
-    fn add_context(_location: I, _ctx: T, other: Self) -> Self {
+impl<I, C> ContextError<I, C> for Error<I> {
+    fn add_context(_location: I, _ctx: C, other: Self) -> Self {
         other
     }
 }
 
 impl<I> ContextError<I, &'static str> for VerboseError<I> {
-    fn add_context(location: I, ctx: &'static str, other: Self) -> Self {
-        let errors = other.errors;
+    fn add_context(location: I, ctx: &'static str, mut other: Self) -> Self {
+        other
+            .errors
+            .push((location, VerboseErrorKind::Context(ctx)));
 
-        Self {
-            errors: express!(errors.push((location, VerboseErrorKind::Context(ctx)))),
-        }
+        other
     }
 }

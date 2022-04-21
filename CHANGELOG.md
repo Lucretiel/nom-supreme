@@ -11,10 +11,15 @@
 ### Changed
 
 - Removed all feature flags for now. They may come back later, but probably not until someone cites a desire for nom-supreme in a no-std context.
+- `parse_from_str_cut` now supports any input type, like `parse_from_str`.
 
 ### Internal
 
 - Upgrade to brownstone 3, for substantial improvement to array parser implementations
+
+### Removed
+
+- Removed the global `parse_from_str` in favor of `ParserExt::parse_from_str`.
 
 ## 0.7.0
 

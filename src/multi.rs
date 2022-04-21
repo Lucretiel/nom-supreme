@@ -359,18 +359,15 @@ mod test_separated_terminated {
         Err, IResult, Parser,
     };
 
+    use crate::error::{BaseErrorKind, ErrorTree, Expectation};
     use crate::parser_ext::ParserExt;
-    use crate::{
-        error::{BaseErrorKind, ErrorTree, Expectation},
-        parse_from_str,
-    };
 
     use super::parse_separated_terminated;
 
     /// Parse a series of numbers, separated by commas, terminated by a period.
     fn parse_number_list(input: &str) -> IResult<&str, Vec<i64>, ErrorTree<&str>> {
         parse_separated_terminated(
-            parse_from_str(digit1),
+            digit1.parse_from_str(),
             char(',').delimited_by(space0),
             char('.').preceded_by(space0),
             Vec::new,
@@ -476,7 +473,7 @@ mod test_separated_terminated {
     /// separator behavior.
     fn parse_number_dot_list(input: &str) -> IResult<&str, Vec<i64>, ErrorTree<&str>> {
         parse_separated_terminated(
-            digit1.parse_from_str().terminated(char('.')),
+            digit1.terminated(char('.')).parse_from_str(),
             space0,
             char(';'),
             Vec::new,
@@ -575,7 +572,7 @@ mod test_separated_terminated {
     /// separator can match the same string.
     fn parse_comma_separated(input: &str) -> IResult<&str, Vec<i64>, ErrorTree<&str>> {
         parse_separated_terminated(
-            parse_from_str(digit1),
+            digit1.parse_from_str(),
             char(','),
             char(',').opt().all_consuming(),
             Vec::new,

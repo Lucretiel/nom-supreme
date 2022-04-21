@@ -904,9 +904,10 @@ pub trait ParserExt<I, O, E>: Parser<I, O, E> + Sized {
     #[must_use = "Parsers do nothing unless used"]
     fn parse_from_str_cut<'a, T>(self) -> FromStrCutParser<Self, T>
     where
-        Self: Parser<&'a str, &'a str, E>,
+        Self: Parser<I, &'a str, E>,
+        I: Clone,
         T: FromStr,
-        E: FromExternalError<&'a str, T::Err>,
+        E: FromExternalError<I, T::Err>,
     {
         must_be_a_parser(FromStrCutParser {
             parser: self,
@@ -1552,15 +1553,16 @@ pub struct FromStrCutParser<P, T> {
     phantom: PhantomData<T>,
 }
 
-impl<'a, T, E, P> Parser<&'a str, T, E> for FromStrCutParser<P, T>
+impl<'a, I, T, E, P> Parser<I, T, E> for FromStrCutParser<P, T>
 where
-    P: Parser<&'a str, &'a str, E>,
+    P: Parser<I, &'a str, E>,
+    I: Clone,
     T: FromStr,
-    E: FromExternalError<&'a str, T::Err>,
+    E: FromExternalError<I, T::Err>,
 {
     #[inline]
-    fn parse(&mut self, input: &'a str) -> nom::IResult<&'a str, T, E> {
-        let (tail, value_str) = self.parser.parse(input)?;
+    fn parse(&mut self, input: I) -> nom::IResult<I, T, E> {
+        let (tail, value_str) = self.parser.parse(input.clone())?;
         match value_str.parse() {
             Ok(value) => Ok((tail, value)),
             Err(parse_err) => Err(NomErr::Failure(E::from_external_error(

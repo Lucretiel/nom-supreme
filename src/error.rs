@@ -377,6 +377,15 @@ pub type ErrorTree<I> =
 /// Generic version of [`ErrorTree`], which allows for arbitrary `Tag`, `Context`,
 /// and `ExternalError` types. See [`ErrorTree`] for more extensive docs and
 /// examples.
+///
+/// - `Tag` is typically something like `&'static str` or `&'static [u8]`.
+/// - `Context` is typically `&'static str`, and it must be in order to
+///   interoperate with nom's [`context`][nom::error::context] combinator.
+///   `nom-supreme` provides a more generic [`.context`][crate::ParserExt::context]
+///   combinator that allows for any kind of context to be attached to an error.
+/// - `Error` can usually be nothing, as it's unusual for nom parsers to
+///   require external errors. `Box<dyn Error + Send + Sync + 'static>` is
+///   a common catch-all.
 #[derive(Debug)]
 pub enum GenericErrorTree<Location, Tag, Context, ExternalError> {
     /// A specific error event at a specific location. Often this will indicate

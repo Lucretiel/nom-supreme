@@ -8,7 +8,7 @@ use nom::{
     Err as NomErr, InputLength, Offset, Parser, Slice,
 };
 
-use super::ContextError;
+use crate::context::ContextError;
 
 /// No-op function that typechecks that its argument is a parser. Used to
 /// ensure there are no accidentally missing type bounds on the `ParserExt`
@@ -127,26 +127,62 @@ pub trait ParserExt<I, O, E>: Parser<I, O, E> + Sized {
         must_be_a_parser(Complete { parser: self })
     }
 
-    /// Create a parser that transforms `Error` into `Failure`. This will
-    /// end the parse immediately, even if there are other branches that
-    /// could occur.
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// # use nom::{Err, Parser};
-    /// # use nom::error::{Error, ErrorKind};
-    /// use nom_supreme::parser_ext::ParserExt;
-    /// use nom_supreme::tag::complete::tag;
-    ///
-    /// let mut parser = tag("Hello").cut();
-    ///
-    /// assert_eq!(parser.parse("Hello"), Ok(("", "Hello")));
-    /// assert_eq!(
-    ///     parser.parse("World"),
-    ///     Err(Err::Failure(Error{input: "World", code: ErrorKind::Tag}))
-    /// );
-    /// ```
+    /**
+    Create a parser that transforms `Error` into `Failure`. This will
+    end the parse immediately, even if there are other branches that
+    could occur.
+
+    # Example
+
+    ```rust
+    use cool_asserts::assert_matches;
+    # use nom::{Err, Parser};
+    # use nom::error::{Error, ErrorKind};
+    use nom::branch::alt;
+    use nom::character::complete::char;
+    use nom_supreme::parser_ext::ParserExt;
+    use nom_supreme::tag::complete::tag;
+    use nom_supreme::error::{ErrorTree, BaseErrorKind, Expectation};
+
+    let mut parser = alt((
+        tag("Hello").terminated(char(']')).cut().preceded_by(char('[')),
+        tag("World").terminated(char(')')).cut().preceded_by(char('(')),
+    ));
+
+    assert_matches!(parser.parse("[Hello]"), Ok(("", "Hello")));
+    assert_matches!(parser.parse("(World)"), Ok(("", "World")));
+
+    let branches = assert_matches!(
+        parser.parse("ABC"),
+        Err(Err::Error(ErrorTree::Alt(branches))) => branches
+    );
+
+    assert_matches!(
+        branches.as_slice(),
+        [
+            ErrorTree::Base {
+                kind: BaseErrorKind::Expected(Expectation::Char('[')),
+                location: "ABC",
+            },
+            ErrorTree::Base {
+                kind: BaseErrorKind::Expected(Expectation::Char('(')),
+                location: "ABC",
+            },
+        ]
+    );
+
+    // Notice in this example that there's no error for [Hello]. The cut after
+    // [ prevented the other branch from being attempted, and prevented earlier
+    // errors from being retained
+    assert_matches!(
+        parser.parse("(Hello)"),
+        Err(Err::Failure(ErrorTree::Base {
+            kind: BaseErrorKind::Expected(Expectation::Tag("World")),
+            location: "Hello)",
+        }))
+    );
+    ```
+    */
     #[inline]
     #[must_use = "Parsers do nothing unless used"]
     fn cut(self) -> Cut<Self> {
@@ -333,6 +369,7 @@ pub trait ParserExt<I, O, E>: Parser<I, O, E> + Sized {
     /// # Example
     ///
     /// ```rust
+    /// use cool_asserts::assert_matches;
     /// # use nom::{Err, Parser};
     /// # use nom::error::{Error, ErrorKind};
     /// use nom::branch::alt;
@@ -350,12 +387,12 @@ pub trait ParserExt<I, O, E>: Parser<I, O, E> + Sized {
     /// assert_eq!(parser.parse("false abc").unwrap(), (" abc", false));
     ///
     /// // ErrorTree gives much better error reports for alt and tag.
-    /// let err = parser.parse("null").unwrap_err();
-    /// let choices = match err {
-    ///     Err::Error(ErrorTree::Alt(choices)) => choices,
-    ///     _ => panic!("Unexpected error {:?}", err)
-    /// };
-    /// assert!(matches!(
+    /// let choices = assert_matches!(
+    ///     parser.parse("null"),
+    ///     Err(Err::Error(ErrorTree::Alt(choices))) => choices
+    /// );
+    ///
+    /// assert_matches!(
     ///     choices.as_slice(),
     ///     [
     ///         ErrorTree::Base {
@@ -367,7 +404,7 @@ pub trait ParserExt<I, O, E>: Parser<I, O, E> + Sized {
     ///             location: "null",
     ///         },
     ///     ]
-    /// ))
+    /// )
     /// ```
     #[inline]
     #[must_use = "Parsers do nothing unless used"]
@@ -590,7 +627,7 @@ pub trait ParserExt<I, O, E>: Parser<I, O, E> + Sized {
     retained, rather than discarded.
 
     ```rust
-        use cool_asserts::assert_matches;
+    use cool_asserts::assert_matches;
     # use nom::{Err, Parser, IResult};
     use nom::character::complete::{digit1, char};
     use nom_supreme::parser_ext::ParserExt;

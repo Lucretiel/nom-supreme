@@ -1,3 +1,9 @@
+//! Enhanced context combinator for nom.
+//!
+//! This module introduces an updated, [`ContextError`], that allows for
+//! arbitrary types of data to be attached as context to errors, rather than
+//! requiring `&'static str`.
+
 use nom::error::{Error, ErrorKind, VerboseError, VerboseErrorKind};
 
 /// Updated version of [`nom::error::ContextError`]. Allows for arbitrary

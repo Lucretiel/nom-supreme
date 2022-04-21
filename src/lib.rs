@@ -39,12 +39,11 @@ macro_rules! express {
     }};
 }
 
-mod context;
+pub mod context;
 pub mod error;
 pub mod final_parser;
 pub mod multi;
 pub mod parser_ext;
 pub mod tag;
 
-pub use context::ContextError;
 pub use parser_ext::ParserExt;

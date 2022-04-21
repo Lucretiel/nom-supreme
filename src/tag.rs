@@ -10,9 +10,9 @@ use nom::error::{Error, ErrorKind};
 use nom::error::{ParseError, VerboseError};
 
 /// Similar to [`FromExternalError`][nom::error::FromExternalError] and
-/// [`ContextError`][nom::error::ContextError], this trait allows a parser to
-/// create an error representing an unmatched tag. This allows error messages
-/// to produce more useful context about what went wrong.
+/// [`ContextError`][crate::context::ContextError], this trait allows a parser
+/// to create an error representing an unmatched tag. This allows error
+/// messages to produce more useful context about what went wrong.
 pub trait TagError<I, T>: Sized {
     /// Create an error from an expected tag at a location.
     fn from_tag(input: I, tag: T) -> Self;

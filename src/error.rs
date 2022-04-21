@@ -15,9 +15,9 @@ use nom::{
 };
 
 use crate::{
+    context::ContextError,
     final_parser::{ExtractContext, RecreateContext},
     tag::TagError,
-    ContextError,
 };
 
 /// Enum for generic things that can be expected by nom parsers
@@ -365,13 +365,15 @@ impl<C: Debug> Display for StackContext<C> {
 /// TODO WRITE THIS SECTION
 ///
 /// [`.or`]: nom::Parser::or
-/// [`Alt`]: ErrorTree::Alt
+/// [`Alt`]: GenericErrorTree::Alt
 /// [`context`]: nom::error::context
 /// [`ErrorKind::Alt`]: nom::error::ErrorKind::Alt
 /// [`ErrorKind`]: nom::error::ErrorKind
+/// [`ErrorTree::Alt`]: GenericErrorTree::Alt
+/// [`ErrorTree::Base`]: GenericErrorTree::Base
+/// [`ErrorTree::Stack`]: GenericErrorTree::Stack
 /// [`Stack`]: GenericErrorTree::Stack
 /// [`VerboseError`]: nom::error::VerboseError
-/// [`ErrorTree::Alt`]: GenericErrorTree::Alt
 pub type ErrorTree<I> =
     GenericErrorTree<I, &'static str, &'static str, Box<dyn Error + Send + Sync + 'static>>;
 

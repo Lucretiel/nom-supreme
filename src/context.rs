@@ -29,6 +29,7 @@ impl<I, T> ContextError<I, T> for Error<I> {
 impl<I> ContextError<I, &'static str> for VerboseError<I> {
     fn add_context(location: I, ctx: &'static str, other: Self) -> Self {
         let errors = other.errors;
+
         Self {
             errors: express!(errors.push((location, VerboseErrorKind::Context(ctx)))),
         }

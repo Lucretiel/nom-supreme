@@ -139,7 +139,7 @@ impl<T: Debug, E: Display> Display for BaseErrorKind<T, E> {
     }
 }
 
-/// Context that can appear in a [stack][ErrorTree::Stack], above a base
+/// Context that can appear in a [stack][GenericErrorTree::Stack], above a base
 /// [`ErrorTree`]. Stack contexts are attached by parser combinators to errors
 /// from their subparsers during stack unwinding.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -176,14 +176,14 @@ impl<C: Debug> Display for StackContext<C> {
 /// information as possible. That being said, many [`ErrorKind`] variants add
 /// very little useful contextual information to error traces; for example,
 /// [`ErrorKind::Alt`] doesn't add any interesting context to an
-/// [`ErrorTree::Alt`], and its presence in a stack precludes merging together
-/// adjacent sets of [`ErrorTree::Alt`] siblings.
+/// [`GenericErrorTree::Alt`], and its presence in a stack precludes merging together
+/// adjacent sets of [`GenericErrorTree::Alt`] siblings.
 ///
 /// # Examples
 ///
 /// ## Base parser errors
 ///
-/// An `ErrorTree::Base` is an error that occurred at the "bottom" of the stack,
+/// An `GenericErrorTree::Base` is an error that occurred at the "bottom" of the stack,
 /// from a parser looking for 1 specific kind of thing.
 ///
 /// ```rust
@@ -195,14 +195,14 @@ impl<C: Debug> Display for StackContext<C> {
 ///
 /// let err: Err<ErrorTree<&str>> = digit1.parse("abc").unwrap_err();
 ///
-/// assert_matches!(err, Err::Error(ErrorTree::Base{
+/// assert_matches!(err, Err::Error(GenericErrorTree::Base{
 ///     location: "abc",
 ///     kind: BaseErrorKind::Expected(Expectation::Digit),
 /// }));
 ///
 /// let err: Err<ErrorTree<&str>> = char('a').and(char('b')).parse("acb").unwrap_err();
 ///
-/// assert_matches!(err, Err::Error(ErrorTree::Base{
+/// assert_matches!(err, Err::Error(GenericErrorTree::Base{
 ///     location: "cb",
 ///     kind: BaseErrorKind::Expected(Expectation::Char('b')),
 /// }));
@@ -210,7 +210,7 @@ impl<C: Debug> Display for StackContext<C> {
 ///
 /// ## Stacks
 ///
-/// An [`ErrorTree::Stack`] is created when a parser combinator—typically
+/// An [`GenericErrorTree::Stack`] is created when a parser combinator—typically
 /// [`context`]—attaches additional error context to a subparser error. It can
 /// have any [`ErrorTree`] at the base of the stack.
 ///
@@ -235,11 +235,11 @@ impl<C: Debug> Display for StackContext<C> {
 ///
 /// let err: Err<ErrorTree<&str>> = parenthesized.parse("(abc 123)").unwrap_err();
 ///
-/// assert_matches!(err, Err::Error(ErrorTree::Stack {
+/// assert_matches!(err, Err::Error(GenericErrorTree::Stack {
 ///     base,
 ///     contexts,
 /// }) => {
-///     assert_matches!(*base, ErrorTree::Base {
+///     assert_matches!(*base, GenericErrorTree::Base {
 ///         location: "123)",
 ///         kind: BaseErrorKind::Expected(Expectation::Alpha)
 ///     });
@@ -254,12 +254,12 @@ impl<C: Debug> Display for StackContext<C> {
 ///
 /// ## Alternatives
 ///
-/// An [`ErrorTree::Alt`] is created when a series of parsers are all tried,
+/// An [`GenericErrorTree::Alt`] is created when a series of parsers are all tried,
 /// and all of them fail. Most commonly this will happen via the
 /// [`alt`][nom::branch::alt] combinator or the equivalent [`.or`] postfix
 /// combinator. When all of these subparsers fail, their errors (each
 /// individually their own `ErrorTree`) are aggregated into an
-/// [`ErrorTree::Alt`], indicating that "any one of these things were
+/// [`GenericErrorTree::Alt`], indicating that "any one of these things were
 /// expected."
 ///
 /// ```rust
@@ -288,15 +288,15 @@ impl<C: Debug> Display for StackContext<C> {
 ///
 /// // This error communicates to the caller that any one of "true", "false",
 /// // or "null" was expected at that location.
-/// assert_matches!(err, Err::Error(ErrorTree::Alt(choices)) => {
+/// assert_matches!(err, Err::Error(GenericErrorTree::Alt(choices)) => {
 ///     assert_matches!(choices.as_slice(), [
-///         ErrorTree::Base {
+///         GenericErrorTree::Base {
 ///             location: "123",
 ///             kind: BaseErrorKind::Expected(Expectation::Tag("true"))},
-///         ErrorTree::Base {
+///         GenericErrorTree::Base {
 ///             location: "123",
 ///             kind: BaseErrorKind::Expected(Expectation::Tag("false"))},
-///         ErrorTree::Base {
+///         GenericErrorTree::Base {
 ///             location: "123",
 ///             kind: BaseErrorKind::Expected(Expectation::Tag("null"))},
 ///     ])
@@ -333,25 +333,25 @@ impl<C: Debug> Display for StackContext<C> {
 ///
 /// let err: Err<ErrorTree<&str>> = parse_null_bool.parse("123").unwrap_err();
 ///
-/// assert_matches!(err, Err::Error(ErrorTree::Stack{base, contexts}) => {
+/// assert_matches!(err, Err::Error(GenericErrorTree::Stack{base, contexts}) => {
 ///     assert_eq!(contexts, [("123", StackContext::Context("null or bool"))]);
-///     assert_matches!(*base, ErrorTree::Alt(choices) => {
-///         assert_matches!(&choices[0], ErrorTree::Stack{base, contexts} => {
+///     assert_matches!(*base, GenericErrorTree::Alt(choices) => {
+///         assert_matches!(&choices[0], GenericErrorTree::Stack{base, contexts} => {
 ///             assert_eq!(contexts, &[("123", StackContext::Context("bool"))]);
-///             assert_matches!(&**base, ErrorTree::Alt(choices) => {
-///                 assert_matches!(&choices[0], ErrorTree::Base {
+///             assert_matches!(&**base, GenericErrorTree::Alt(choices) => {
+///                 assert_matches!(&choices[0], GenericErrorTree::Base {
 ///                     location: "123",
 ///                     kind: BaseErrorKind::Expected(Expectation::Tag("true"))
 ///                 });
-///                 assert_matches!(&choices[1], ErrorTree::Base {
+///                 assert_matches!(&choices[1], GenericErrorTree::Base {
 ///                     location: "123",
 ///                     kind: BaseErrorKind::Expected(Expectation::Tag("false"))
 ///                 });
 ///            });
 ///         });
-///         assert_matches!(&choices[1], ErrorTree::Stack{base, contexts} => {
+///         assert_matches!(&choices[1], GenericErrorTree::Stack{base, contexts} => {
 ///             assert_eq!(contexts, &[("123", StackContext::Context("null"))]);
-///             assert_matches!(&**base, ErrorTree::Base {
+///             assert_matches!(&**base, GenericErrorTree::Base {
 ///                 location: "123",
 ///                 kind: BaseErrorKind::Expected(Expectation::Tag("null"))
 ///             });
@@ -365,17 +365,18 @@ impl<C: Debug> Display for StackContext<C> {
 /// TODO WRITE THIS SECTION
 ///
 /// [`.or`]: nom::Parser::or
-/// [`Alt`]: ErrorTree::Alt
+/// [`Alt`]: GenericErrorTree::Alt
 /// [`context`]: nom::error::context
 /// [`ErrorKind::Alt`]: nom::error::ErrorKind::Alt
 /// [`ErrorKind`]: nom::error::ErrorKind
-/// [`Stack`]: ErrorTree::Stack
+/// [`Stack`]: GenericErrorTree::Stack
 /// [`VerboseError`]: nom::error::VerboseError
 pub type ErrorTree<I> =
     GenericErrorTree<I, &'static str, &'static str, Box<dyn Error + Send + Sync + 'static>>;
 
-/// Generic version of `ErrorTree`, which allows for arbitrary `Tag`, `Context`,
-/// and `ExternalError` types.
+/// Generic version of [`ErrorTree`], which allows for arbitrary `Tag`, `Context`,
+/// and `ExternalError` types. See [`ErrorTree`] for more extensive docs and
+/// examples.
 #[derive(Debug)]
 pub enum GenericErrorTree<Location, Tag, Context, ExternalError> {
     /// A specific error event at a specific location. Often this will indicate
@@ -517,13 +518,13 @@ impl<I: InputLength, T, C, E> ParseError<I> for GenericErrorTree<I, T, C, E> {
     /// accumulated when backtracing. "other" is the original error, and the
     /// inputs new error from higher in the call stack.
     ///
-    /// If `other` is already an `ErrorTree::Stack`, the context is added to
+    /// If `other` is already an `GenericErrorTree::Stack`, the context is added to
     /// the stack; otherwise, a new stack is created, with `other` at the root.
     fn append(location: I, kind: NomErrorKind, other: Self) -> Self {
         let context = (location, StackContext::Kind(kind));
 
         match other {
-            // Don't create a stack of [ErrorKind::Alt, ErrorTree::Alt(..)]
+            // Don't create a stack of [ErrorKind::Alt, GenericErrorTree::Alt(..)]
             alt @ GenericErrorTree::Alt(..) if kind == NomErrorKind::Alt => alt,
 
             // This is already a stack, so push on to it
@@ -549,8 +550,8 @@ impl<I: InputLength, T, C, E> ParseError<I> for GenericErrorTree<I, T, C, E> {
     }
 
     /// Combine two errors from branches of alt. If either or both errors are
-    /// already [`ErrorTree::Alt`], the different error sets are merged;
-    /// otherwise, a new [`ErrorTree::Alt`] is created, containing both
+    /// already [`GenericErrorTree::Alt`], the different error sets are merged;
+    /// otherwise, a new [`GenericErrorTree::Alt`] is created, containing both
     /// `self` and `other`.
     fn or(self, other: Self) -> Self {
         // For now we assume that there's no need to try and preserve
@@ -573,7 +574,6 @@ impl<I: InputLength, T, C, E> ParseError<I> for GenericErrorTree<I, T, C, E> {
 }
 
 impl<I, T, C, E> ContextError<I, C> for GenericErrorTree<I, T, C, E> {
-    /// Similar to append: Create a new error with some added context
     fn add_context(location: I, ctx: C, other: Self) -> Self {
         let context = (location, StackContext::Context(ctx));
 

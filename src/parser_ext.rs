@@ -1560,18 +1560,14 @@ impl<P, I, O, E, const N: usize> Parser<I, [O; N], E> for ArrayParser<P>
 where
     P: Parser<I, O, E>,
 {
-    fn parse(&mut self, input: I) -> nom::IResult<I, [O; N], E> {
-        // TODO: create a folding version of brownstone::try_build so that
-        // this Some trick isn't necessary
-        let mut input = Some(input);
+    fn parse(&mut self, mut input: I) -> nom::IResult<I, [O; N], E> {
+        let array = brownstone::build![{
+            let (tail, value) = self.parser.parse(input)?;
+            input = tail;
+            value
+        }];
 
-        brownstone::try_build(|| {
-            let (tail, value) = self.parser.parse(input.take().unwrap())?;
-            input = Some(tail);
-            Ok(value)
-        })
-        .map(|array| (input.unwrap(), array))
-        .map_err(|err| err.error)
+        Ok((input, array))
     }
 }
 
@@ -1590,27 +1586,20 @@ where
     P1: Parser<I, O1, E>,
     P2: Parser<I, O2, E>,
 {
-    fn parse(&mut self, input: I) -> nom::IResult<I, [O1; N], E> {
+    fn parse(&mut self, mut input: I) -> nom::IResult<I, [O1; N], E> {
         // TODO: create a folding version of brownstone::try_build so that
         // this Some trick isn't necessary
-        let mut input = Some(input);
+        let array = brownstone::build!(|index: usize| {
+            let tail = match index {
+                0 => input,
+                _ => self.separator.parse(input)?.0,
+            };
 
-        brownstone::try_build_indexed(|idx| {
-            let local_input = input.take().unwrap();
+            let (tail, value) = self.parser.parse(tail)?;
+            input = tail;
+            value
+        });
 
-            let (tail, value) = match idx {
-                0 => self.parser.parse(local_input),
-                _ => self
-                    .parser
-                    .by_ref()
-                    .preceded_by(self.separator.by_ref())
-                    .parse(local_input),
-            }?;
-
-            input = Some(tail);
-            Ok(value)
-        })
-        .map(|array| (input.unwrap(), array))
-        .map_err(|err| err.error)
+        Ok((input, array))
     }
 }

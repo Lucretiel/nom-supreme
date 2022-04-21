@@ -578,6 +578,108 @@ pub trait ParserExt<I, O, E>: Parser<I, O, E> + Sized {
         })
     }
 
+    /**
+    Make this parser optionally precede by another one. `self` will
+    run first, and then the `successor` will run even if `self` returns an
+    error. Both outputs will be returned. This is functionally equivalent
+    to `self.opt().and(successor)`, but it has the added benefit that if
+    *both* parsers return an error, the error from the `prefix` will be
+    retained, rather than discarded.
+
+    ```rust
+        use cool_asserts::assert_matches;
+    # use nom::{Err, Parser, IResult};
+    use nom::character::complete::{digit1, char};
+    use nom_supreme::parser_ext::ParserExt;
+    use nom_supreme::error::{ErrorTree, BaseErrorKind, Expectation};
+
+    let mut parser = char('-').or(char('+')).opt_precedes(digit1);
+
+    assert_matches!(parser.parse("123"), Ok(("", (None, "123"))));
+    assert_matches!(parser.parse("-123"), Ok(("", (Some('-'), "123"))));
+
+    let choices = assert_matches!(
+        parser.parse("abc"),
+        Err(Err::Error(ErrorTree::Alt(choices))) => choices,
+    );
+
+    assert_matches!(choices.as_slice(), [
+        ErrorTree::Base {
+            location: "abc",
+            kind: BaseErrorKind::Expected(Expectation::Char('-'))
+        },
+        ErrorTree::Base {
+            location: "abc",
+            kind: BaseErrorKind::Expected(Expectation::Char('+'))
+        },
+        ErrorTree::Base {
+            location: "abc",
+            kind: BaseErrorKind::Expected(Expectation::Digit)
+        },
+    ]);
+    ```
+    */
+    fn opt_precedes<F, O2>(self, successor: F) -> OptionalPreceded<Self, F>
+    where
+        E: ParseError<I>,
+        I: Clone,
+        F: Parser<I, O2, E>,
+    {
+        must_be_a_parser(OptionalPreceded {
+            prefix: self,
+            parser: successor,
+        })
+    }
+
+    /**
+    Make this parser optionally preceded by another one. The `prefix` will
+    run first, and then this parser will run even if the `prefix` returned
+    an error. Both outputs will be returned. This is functionally equivalent
+    to `prefix.opt().and(self)`, but it has the added benefit that if *both*
+    parsers return an error, the error from the `prefix` will be retained,
+    rather than discarded.
+
+    ```rust
+    use cool_asserts::assert_matches;
+    # use nom::{Err, Parser, IResult};
+    use nom::character::complete::{digit1, char};
+    use nom_supreme::parser_ext::ParserExt;
+    use nom_supreme::error::{ErrorTree, BaseErrorKind, Expectation};
+
+    let mut parser = digit1.opt_preceded_by(char('-'));
+
+    assert_matches!(parser.parse("123"), Ok(("", (None, "123"))));
+    assert_matches!(parser.parse("-123"), Ok(("", (Some('-'), "123"))));
+
+    let choices = assert_matches!(
+        parser.parse("abc"),
+        Err(Err::Error(ErrorTree::Alt(choices))) => choices,
+    );
+
+    assert_matches!(choices.as_slice(), [
+        ErrorTree::Base {
+            location: "abc",
+            kind: BaseErrorKind::Expected(Expectation::Char('-'))
+        },
+        ErrorTree::Base {
+            location: "abc",
+            kind: BaseErrorKind::Expected(Expectation::Digit)
+        },
+    ]);
+    ```
+    */
+    fn opt_preceded_by<F, O2>(self, prefix: F) -> OptionalPreceded<F, Self>
+    where
+        E: ParseError<I>,
+        I: Clone,
+        F: Parser<I, O2, E>,
+    {
+        must_be_a_parser(OptionalPreceded {
+            parser: self,
+            prefix,
+        })
+    }
+
     /// Make this parser delimited, requiring a `delimiter` as both a prefix and
     /// a suffix. The output of the delimiters is discarded.
     ///
@@ -1191,6 +1293,39 @@ where
     }
 }
 
+/// Parser which gets an optional output from a prefix subparser before running
+/// the main subparser. Returns the output even if the prefix subparser returns
+/// error.
+#[derive(Debug, Clone, Copy)]
+pub struct OptionalPreceded<P1, P2> {
+    parser: P2,
+    prefix: P1,
+}
+
+impl<I, O1, O2, E, P1, P2> Parser<I, (Option<O1>, O2), E> for OptionalPreceded<P1, P2>
+where
+    P1: Parser<I, O1, E>,
+    P2: Parser<I, O2, E>,
+    I: Clone,
+    E: ParseError<I>,
+{
+    #[inline]
+    fn parse(&mut self, input: I) -> nom::IResult<I, (Option<O1>, O2), E> {
+        match self.prefix.parse(input.clone()) {
+            Ok((input, o1)) => self
+                .parser
+                .parse(input)
+                .map(|(tail, o2)| (tail, (Some(o1), o2))),
+            Err(NomErr::Error(err1)) => self
+                .parser
+                .parse(input)
+                .map(|(tail, o2)| (tail, (None, o2)))
+                .map_err(|err2| err2.map(|err2| err1.or(err2))),
+            Err(err) => Err(err),
+        }
+    }
+}
+
 /// Parser which gets and discards a delimiting value both before and after the
 /// main subparser. Returns the output from the main subparser if all were
 /// successful.
@@ -1361,8 +1496,7 @@ fn from_str_parser_non_str_input() {
     use crate::error::{BaseErrorKind, ErrorTree, Expectation};
 
     let mut parser = digit1
-        .preceded_by(char('-'))
-        .or(digit1)
+        .opt_preceded_by(char('-'))
         .recognize()
         .map_res(from_utf8)
         .parse_from_str();

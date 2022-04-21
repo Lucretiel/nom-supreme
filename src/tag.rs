@@ -7,7 +7,6 @@
 
 use nom::error::{Error, ErrorKind};
 
-#[cfg(feature = "std")]
 use nom::error::{ParseError, VerboseError};
 
 /// Similar to [`FromExternalError`][nom::error::FromExternalError] and
@@ -41,7 +40,6 @@ impl<I, T> TagError<I, T> for Error<I> {
     }
 }
 
-#[cfg(feature = "std")]
 impl<I, T> TagError<I, T> for VerboseError<I> {
     fn from_tag(input: I, _tag: T) -> Self {
         VerboseError::from_error_kind(input, ErrorKind::Tag)

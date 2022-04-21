@@ -4,9 +4,11 @@
 use core::{marker::PhantomData, ops::RangeTo, str::FromStr};
 
 use nom::{
-    error::{ContextError, ErrorKind as NomErrorKind, FromExternalError, ParseError},
+    error::{ErrorKind as NomErrorKind, FromExternalError, ParseError},
     Err as NomErr, InputLength, Offset, Parser, Slice,
 };
+
+use super::ContextError;
 
 /// No-op function that typechecks that its argument is a parser. Used to
 /// ensure there are no accidentally missing type bounds on the `ParserExt`
@@ -464,10 +466,11 @@ pub trait ParserExt<I, O, E>: Parser<I, O, E> + Sized {
     /// ```
     #[inline]
     #[must_use = "Parsers do nothing unless used"]
-    fn context(self, context: &'static str) -> Context<Self>
+    fn context<C>(self, context: C) -> Context<Self, C>
     where
-        E: ContextError<I>,
+        E: ContextError<I, C>,
         I: Clone,
+        C: Clone,
     {
         must_be_a_parser(Context {
             context,
@@ -1229,22 +1232,42 @@ where
 /// Parser which attaches additional context to any errors returned by the
 /// subparser.
 #[derive(Debug, Clone, Copy)]
-pub struct Context<P> {
-    context: &'static str,
+pub struct Context<P, C> {
+    context: C,
     parser: P,
 }
 
-impl<I, O, E, P> Parser<I, O, E> for Context<P>
+impl<I, O, E, P, C> Parser<I, O, E> for Context<P, C>
 where
     P: Parser<I, O, E>,
-    E: ContextError<I>,
+    E: ContextError<I, C>,
     I: Clone,
+    C: Clone,
 {
     #[inline]
     fn parse(&mut self, input: I) -> nom::IResult<I, O, E> {
+        self.parser.parse(input.clone()).map_err(move |err| {
+            err.map(move |err| E::add_context(input, self.context.clone(), err))
+        })
+    }
+}
+
+/// Parser which replaces errors coming from the inner parser.
+#[derive(Debug, Clone, Copy)]
+pub struct ReplaceError<P, E> {
+    new_error: E,
+    parser: P,
+}
+
+impl<I, O, F, E, P> Parser<I, O, E> for ReplaceError<P, F>
+where
+    P: Parser<I, O, ()>,
+    F: FnMut() -> E,
+{
+    fn parse(&mut self, input: I) -> nom::IResult<I, O, E> {
         self.parser
-            .parse(input.clone())
-            .map_err(move |err| err.map(move |err| E::add_context(input, self.context, err)))
+            .parse(input)
+            .map_err(|err| err.map(|()| (self.new_error)()))
     }
 }
 

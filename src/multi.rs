@@ -349,7 +349,7 @@ where
     }
 }
 
-#[cfg(all(test, feature = "error"))]
+#[cfg(test)]
 mod test_separated_terminated {
     use cool_asserts::assert_matches;
     use nom::{

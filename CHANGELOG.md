@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Added `Parser::opt_precedes` and `Parser::opt_preceded_by`
+
+### Changed
+
+- Removed all feature flags for now. They may come back later, but probably not until someone cites a desire for nom-supreme in a no-std context.
+
+### Internal
+
+- Upgrade to brownstone 3, for substantial improvement to array parsers
+
 ## 0.7.0
 
 ### Changed

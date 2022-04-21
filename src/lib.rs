@@ -23,7 +23,6 @@ A collection of excellent utilities for nom, including:
 */
 
 #![deny(missing_docs)]
-#![cfg_attr(not(any(feature = "std", test)), no_std)]
 
 /**
 Call a method or methods on an object, and then return the original object.
@@ -40,7 +39,7 @@ macro_rules! express {
     }};
 }
 
-#[cfg(feature = "error")]
+mod context;
 pub mod error;
 pub mod final_parser;
 mod from_str;
@@ -48,5 +47,6 @@ pub mod multi;
 pub mod parser_ext;
 pub mod tag;
 
+pub use context::ContextError;
 pub use from_str::parse_from_str;
 pub use parser_ext::ParserExt;

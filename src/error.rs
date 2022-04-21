@@ -10,12 +10,15 @@ use std::{
 use indent_write::fmt::IndentWriter;
 use joinery::JoinableIterator;
 use nom::{
-    error::{ContextError, ErrorKind as NomErrorKind, FromExternalError, ParseError},
+    error::{ErrorKind as NomErrorKind, FromExternalError, ParseError},
     ErrorConvert, InputLength,
 };
 
-use crate::final_parser::{ExtractContext, RecreateContext};
-use crate::tag::TagError;
+use crate::{
+    final_parser::{ExtractContext, RecreateContext},
+    tag::TagError,
+    ContextError,
+};
 
 /// Enum for generic things that can be expected by nom parsers
 ///
@@ -39,9 +42,9 @@ use crate::tag::TagError;
 /// [`take_while`]: nom::bytes::complete::take_while
 #[non_exhaustive]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum Expectation {
-    /// A string tag was expected.
-    Tag(&'static str),
+pub enum Expectation<T> {
+    /// A tag was expected.
+    Tag(T),
 
     /// A specific character was expected.
     Char(char),
@@ -77,10 +80,10 @@ pub enum Expectation {
     Something,
 }
 
-impl Display for Expectation {
+impl<T: Debug> Display for Expectation<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match *self {
-            Expectation::Tag(tag) => write!(f, "{:?}", tag),
+            Expectation::Tag(ref tag) => write!(f, "{:?}", tag),
             Expectation::Char(c) => write!(f, "{:?}", c),
             Expectation::Alpha => write!(f, "an ascii letter"),
             Expectation::Digit => write!(f, "an ascii digit"),
@@ -99,12 +102,15 @@ impl Display for Expectation {
 /// These are the different specific things that can go wrong at a particular
 /// location during a nom parse. Many of these are collected into an
 /// [`ErrorTree`].
+///
+/// - `T` is the tag type, such as &'static str.
+/// - `E` is the external error type, such as `Box<dyn Error>`.
 #[derive(Debug)]
-pub enum BaseErrorKind {
+pub enum BaseErrorKind<T, E> {
     /// Something specific was expected, such as a specific
     /// [character][Expectation::Char] or any [digit](Expectation::Digit).
     /// See [`Expectation`] for details.
-    Expected(Expectation),
+    Expected(Expectation<T>),
 
     /// A nom parser failed.
     Kind(NomErrorKind),
@@ -116,13 +122,13 @@ pub enum BaseErrorKind {
     // Design note: I've gone back and forth on whether or not to exclude the
     // ErrorKind from this variant. Right now I'm doing so, because it seems
     // like in practice it's *always* MapRes.
-    External(Box<dyn Error + Send + Sync + 'static>),
+    External(E),
 }
 
-impl Display for BaseErrorKind {
+impl<T: Debug, E: Display> Display for BaseErrorKind<T, E> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match *self {
-            BaseErrorKind::Expected(expectation) => write!(f, "expected {}", expectation),
+            BaseErrorKind::Expected(ref expectation) => write!(f, "expected {}", expectation),
             BaseErrorKind::External(ref err) => {
                 writeln!(f, "external error:")?;
                 let mut f = IndentWriter::new("  ", f);
@@ -137,21 +143,21 @@ impl Display for BaseErrorKind {
 /// [`ErrorTree`]. Stack contexts are attached by parser combinators to errors
 /// from their subparsers during stack unwinding.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum StackContext {
+pub enum StackContext<C> {
     /// A nom combinator attached an [`ErrorKind`][NomErrorKind] as context
     /// for a subparser error.
     Kind(NomErrorKind),
 
     /// The [`context`][crate::parser_ext::ParserExt::context] combinator
     /// attached a message as context for a subparser error.
-    Context(&'static str),
+    Context(C),
 }
 
-impl Display for StackContext {
+impl<C: Debug> Display for StackContext<C> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match *self {
             StackContext::Kind(kind) => write!(f, "while parsing {:?}", kind),
-            StackContext::Context(ctx) => write!(f, "in section {:?}", ctx),
+            StackContext::Context(ref ctx) => write!(f, "in section {:?}", ctx),
         }
     }
 }
@@ -162,9 +168,9 @@ impl Display for StackContext {
 /// [`VerboseError`] can represent a *stack* of errors, this type can represent
 /// a full tree. In addition to representing a particular specific parse error,
 /// it can also represent a stack of nested error contexts (for instance, as
-/// provided by [`context`][nom::error::context]), or a list of alternatives
-/// that were all tried individually by [`alt`][nom::branch::alt] and all
-/// failed.
+/// provided by [`context`][crate::ParserExt::context]), or a list of
+/// alternatives that were all tried individually by [`alt`][nom::branch::alt]
+/// and all failed.
 ///
 /// In general, the design goal for this type is to discard as little useful
 /// information as possible. That being said, many [`ErrorKind`] variants add
@@ -365,16 +371,21 @@ impl Display for StackContext {
 /// [`ErrorKind`]: nom::error::ErrorKind
 /// [`Stack`]: ErrorTree::Stack
 /// [`VerboseError`]: nom::error::VerboseError
+pub type ErrorTree<I> =
+    GenericErrorTree<I, &'static str, &'static str, Box<dyn Error + Send + Sync + 'static>>;
+
+/// Generic version of `ErrorTree`, which allows for arbitrary `Tag`, `Context`,
+/// and `ExternalError` types.
 #[derive(Debug)]
-pub enum ErrorTree<I> {
+pub enum GenericErrorTree<Location, Tag, Context, ExternalError> {
     /// A specific error event at a specific location. Often this will indicate
     /// that something like a tag or character was expected at that location.
     Base {
         /// The location of this error in the input
-        location: I,
+        location: Location,
 
         /// The specific error that occurred
-        kind: BaseErrorKind,
+        kind: BaseErrorKind<Tag, ExternalError>,
     },
 
     /// A stack indicates a chain of error contexts was provided. The stack
@@ -385,7 +396,7 @@ pub enum ErrorTree<I> {
         base: Box<Self>,
 
         /// The stack of contexts attached to that error
-        contexts: Vec<(I, StackContext)>,
+        contexts: Vec<(Location, StackContext<Context>)>,
     },
 
     /// A series of parsers were tried at the same location (for instance, via
@@ -399,28 +410,31 @@ pub enum ErrorTree<I> {
     //   (Context or Kind)
 }
 
-impl<I> ErrorTree<I> {
+impl<I, T, C, E> GenericErrorTree<I, T, C, E> {
     /// Helper for `map_locations`. Because it operates recursively, this
     /// method uses an `&mut impl FnMut`, which can be reborrowed.
-    fn map_locations_ref<T>(self, convert_location: &mut impl FnMut(I) -> T) -> ErrorTree<T> {
+    fn map_locations_ref<I2>(
+        self,
+        convert_location: &mut impl FnMut(I) -> I2,
+    ) -> GenericErrorTree<I2, T, C, E> {
         // TODO: does the recursive nature of this function present a potential
         // security risk? Consider replacing it with a breadth-first algorithm,
         // or capping the maximum recursion depth. Note, though, that recursion
         // only happens when alternating between different *kinds* of
         // ErrorTree; nested groups of Alt or Stack are flattened.
         match self {
-            ErrorTree::Base { location, kind } => ErrorTree::Base {
+            GenericErrorTree::Base { location, kind } => GenericErrorTree::Base {
                 location: convert_location(location),
                 kind,
             },
-            ErrorTree::Stack { base, contexts } => ErrorTree::Stack {
+            GenericErrorTree::Stack { base, contexts } => GenericErrorTree::Stack {
                 base: Box::new(base.map_locations_ref(convert_location)),
                 contexts: contexts
                     .into_iter()
                     .map(|(location, context)| (convert_location(location), context))
                     .collect(),
             },
-            ErrorTree::Alt(siblings) => ErrorTree::Alt(
+            GenericErrorTree::Alt(siblings) => GenericErrorTree::Alt(
                 siblings
                     .into_iter()
                     .map(|err| err.map_locations_ref(convert_location))
@@ -433,23 +447,26 @@ impl<I> ErrorTree<I> {
     /// function. This is intended to help add additional context that may not
     /// have been available when the nom parsers were running, such as line
     /// and column numbers.
-    pub fn map_locations<T>(self, mut convert_location: impl FnMut(I) -> T) -> ErrorTree<T> {
+    pub fn map_locations<I2>(
+        self,
+        mut convert_location: impl FnMut(I) -> I2,
+    ) -> GenericErrorTree<I2, T, C, E> {
         self.map_locations_ref(&mut convert_location)
     }
 }
 
-impl<I: Display> Display for ErrorTree<I> {
+impl<I: Display, T: Debug, C: Debug, E: Display> Display for GenericErrorTree<I, T, C, E> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            ErrorTree::Base { location, kind } => write!(f, "{} at {:#}", kind, location),
-            ErrorTree::Stack { contexts, base } => {
+            GenericErrorTree::Base { location, kind } => write!(f, "{} at {:#}", kind, location),
+            GenericErrorTree::Stack { contexts, base } => {
                 contexts.iter().rev().try_for_each(|(location, context)| {
                     writeln!(f, "{} at {:#},", context, location)
                 })?;
 
                 base.fmt(f)
             }
-            ErrorTree::Alt(siblings) => {
+            GenericErrorTree::Alt(siblings) => {
                 writeln!(f, "one of:")?;
                 let mut f = IndentWriter::new("  ", f);
                 write!(f, "{}", siblings.iter().join_with(", or\n"))
@@ -458,9 +475,12 @@ impl<I: Display> Display for ErrorTree<I> {
     }
 }
 
-impl<I: Display + Debug> Error for ErrorTree<I> {}
+impl<I: Display + Debug, T: Debug, C: Debug, E: Display + Debug> Error
+    for GenericErrorTree<I, T, C, E>
+{
+}
 
-impl<I: InputLength> ParseError<I> for ErrorTree<I> {
+impl<I: InputLength, T, C, E> ParseError<I> for GenericErrorTree<I, T, C, E> {
     /// Create a new error at the given position. Interpret `kind` as an
     /// [`Expectation`] if possible, to give a more informative error message.
     fn from_error_kind(location: I, kind: NomErrorKind) -> Self {
@@ -490,7 +510,7 @@ impl<I: InputLength> ParseError<I> for ErrorTree<I> {
             kind => BaseErrorKind::Kind(kind),
         };
 
-        ErrorTree::Base { location, kind }
+        GenericErrorTree::Base { location, kind }
     }
 
     /// Combine an existing error with a new one. This is how error context is
@@ -504,16 +524,16 @@ impl<I: InputLength> ParseError<I> for ErrorTree<I> {
 
         match other {
             // Don't create a stack of [ErrorKind::Alt, ErrorTree::Alt(..)]
-            alt @ ErrorTree::Alt(..) if kind == NomErrorKind::Alt => alt,
+            alt @ GenericErrorTree::Alt(..) if kind == NomErrorKind::Alt => alt,
 
             // This is already a stack, so push on to it
-            ErrorTree::Stack { contexts, base } => ErrorTree::Stack {
+            GenericErrorTree::Stack { contexts, base } => GenericErrorTree::Stack {
                 base,
                 contexts: express!(contexts.push(context)),
             },
 
             // This isn't a stack; create a new stack
-            base => ErrorTree::Stack {
+            base => GenericErrorTree::Stack {
                 base: Box::new(base),
                 contexts: vec![context],
             },
@@ -522,7 +542,7 @@ impl<I: InputLength> ParseError<I> for ErrorTree<I> {
 
     /// Create an error indicating an expected character at a given position
     fn from_char(location: I, character: char) -> Self {
-        ErrorTree::Base {
+        GenericErrorTree::Base {
             location,
             kind: BaseErrorKind::Expected(Expectation::Char(character)),
         }
@@ -536,36 +556,36 @@ impl<I: InputLength> ParseError<I> for ErrorTree<I> {
         // For now we assume that there's no need to try and preserve
         // left-to-right ordering of alternatives.
         let siblings = match (self, other) {
-            (ErrorTree::Alt(siblings1), ErrorTree::Alt(siblings2)) => {
+            (GenericErrorTree::Alt(siblings1), GenericErrorTree::Alt(siblings2)) => {
                 match siblings1.capacity() >= siblings2.capacity() {
                     true => express!(siblings1.extend(siblings2)),
                     false => express!(siblings2.extend(siblings1)),
                 }
             }
-            (ErrorTree::Alt(siblings), err) | (err, ErrorTree::Alt(siblings)) => {
+            (GenericErrorTree::Alt(siblings), err) | (err, GenericErrorTree::Alt(siblings)) => {
                 express!(siblings.push(err))
             }
             (err1, err2) => vec![err1, err2],
         };
 
-        ErrorTree::Alt(siblings)
+        GenericErrorTree::Alt(siblings)
     }
 }
 
-impl<I> ContextError<I> for ErrorTree<I> {
+impl<I, T, C, E> ContextError<I, C> for GenericErrorTree<I, T, C, E> {
     /// Similar to append: Create a new error with some added context
-    fn add_context(location: I, ctx: &'static str, other: Self) -> Self {
+    fn add_context(location: I, ctx: C, other: Self) -> Self {
         let context = (location, StackContext::Context(ctx));
 
         match other {
             // This is already a stack, so push on to it
-            ErrorTree::Stack { contexts, base } => ErrorTree::Stack {
+            GenericErrorTree::Stack { contexts, base } => GenericErrorTree::Stack {
                 base,
                 contexts: express!(contexts.push(context)),
             },
 
             // This isn't a stack, create a new stack
-            base => ErrorTree::Stack {
+            base => GenericErrorTree::Stack {
                 base: Box::new(base),
                 contexts: vec![context],
             },
@@ -573,47 +593,61 @@ impl<I> ContextError<I> for ErrorTree<I> {
     }
 }
 
-impl<I, E: Error + Send + Sync + 'static> FromExternalError<I, E> for ErrorTree<I> {
+impl<I, T, E> nom::error::ContextError<I> for GenericErrorTree<I, T, &'static str, E> {
+    fn add_context(location: I, ctx: &'static str, other: Self) -> Self {
+        ContextError::add_context(location, ctx, other)
+    }
+}
+
+impl<I, T, C, E, E2> FromExternalError<I, E2> for GenericErrorTree<I, T, C, E>
+where
+    E: From<E2>,
+{
     /// Create an error from a given external error, such as from FromStr
-    fn from_external_error(location: I, _kind: NomErrorKind, e: E) -> Self {
-        ErrorTree::Base {
+    fn from_external_error(location: I, _kind: NomErrorKind, e: E2) -> Self {
+        GenericErrorTree::Base {
             location,
-            kind: BaseErrorKind::External(Box::new(e)),
+            kind: BaseErrorKind::External(e.into()),
         }
     }
 }
 
-impl<I> TagError<I, &'static str> for ErrorTree<I> {
-    fn from_tag(location: I, tag: &'static str) -> Self {
-        ErrorTree::Base {
+impl<I, T: AsRef<[u8]>, C, E> TagError<I, T> for GenericErrorTree<I, T, C, E> {
+    fn from_tag(location: I, tag: T) -> Self {
+        GenericErrorTree::Base {
             location,
-            kind: BaseErrorKind::Expected(match tag {
-                "\r\n" => Expectation::CrLf,
-                tag => Expectation::Tag(tag),
+            kind: BaseErrorKind::Expected(match tag.as_ref() {
+                b"\r\n" => Expectation::CrLf,
+                _ => Expectation::Tag(tag),
             }),
         }
     }
 }
 
-impl<I> ErrorConvert<ErrorTree<(I, usize)>> for ErrorTree<I> {
-    fn convert(self) -> ErrorTree<(I, usize)> {
+impl<I, T, C, E> ErrorConvert<GenericErrorTree<(I, usize), T, C, E>>
+    for GenericErrorTree<I, T, C, E>
+{
+    fn convert(self) -> GenericErrorTree<(I, usize), T, C, E> {
         self.map_locations(|location| (location, 0))
     }
 }
 
-impl<I> ErrorConvert<ErrorTree<I>> for ErrorTree<(I, usize)> {
-    fn convert(self) -> ErrorTree<I> {
+impl<I, T, C, E> ErrorConvert<GenericErrorTree<I, T, C, E>>
+    for GenericErrorTree<(I, usize), T, C, E>
+{
+    fn convert(self) -> GenericErrorTree<I, T, C, E> {
         self.map_locations(move |(location, _offset)| location)
     }
 }
 
-impl<I, T> ExtractContext<I, ErrorTree<T>> for ErrorTree<I>
+impl<I, I2, T, C, E> ExtractContext<I, GenericErrorTree<I2, T, C, E>>
+    for GenericErrorTree<I, T, C, E>
 where
     I: Clone,
-    T: RecreateContext<I>,
+    I2: RecreateContext<I>,
 {
-    fn extract_context(self, original_input: I) -> ErrorTree<T> {
-        self.map_locations(move |location| T::recreate_context(original_input.clone(), location))
+    fn extract_context(self, original_input: I) -> GenericErrorTree<I2, T, C, E> {
+        self.map_locations(move |location| I2::recreate_context(original_input.clone(), location))
     }
 }
 

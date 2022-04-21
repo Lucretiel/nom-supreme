@@ -1649,8 +1649,6 @@ where
     P2: Parser<I, O2, E>,
 {
     fn parse(&mut self, mut input: I) -> nom::IResult<I, [O1; N], E> {
-        // TODO: create a folding version of brownstone::try_build so that
-        // this Some trick isn't necessary
         let array = brownstone::build!(|index: usize| {
             let tail = match index {
                 0 => input,

@@ -5,6 +5,8 @@
 ### Added
 
 - Added `Parser::opt_precedes` and `Parser::opt_preceded_by`
+- Added `ContextError`, an improved version of nom's `ContextError` that allows for any kind of context to be attached
+- Added `GenericErrorTree`, a version of `ErrorTree` that is generic over the tag, context, and external error types. `ErrorTree` is now a type alias for this type.
 
 ### Changed
 
@@ -12,7 +14,7 @@
 
 ### Internal
 
-- Upgrade to brownstone 3, for substantial improvement to array parsers
+- Upgrade to brownstone 3, for substantial improvement to array parser implementations
 
 ## 0.7.0
 

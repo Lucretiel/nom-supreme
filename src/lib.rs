@@ -23,6 +23,7 @@ A collection of excellent utilities for nom, including:
 */
 
 #![deny(missing_docs)]
+#![cfg_attr(not(feature = "std"), no_std)]
 
 /**
 Call a method or methods on an object, and then return the original object.

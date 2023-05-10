@@ -7,7 +7,8 @@
 
 use nom::error::{Error, ErrorKind};
 
-use nom::error::{ParseError, VerboseError};
+#[cfg(feature = "alloc")]
+use nom::error::{ParseError as _, VerboseError};
 
 /// Similar to [`FromExternalError`][nom::error::FromExternalError] and
 /// [`ContextError`][crate::context::ContextError], this trait allows a parser
@@ -40,6 +41,7 @@ impl<I, T> TagError<I, T> for Error<I> {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl<I, T> TagError<I, T> for VerboseError<I> {
     fn from_tag(input: I, _tag: T) -> Self {
         VerboseError::from_error_kind(input, ErrorKind::Tag)

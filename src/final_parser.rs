@@ -7,6 +7,7 @@ use nom::{
     Err as NomErr, InputLength, Offset, Parser,
 };
 
+#[cfg(feature = "alloc")]
 use nom::error::VerboseError;
 
 use crate::parser_ext::ParserExt;
@@ -190,6 +191,7 @@ where
     }
 }
 
+#[cfg(feature = "alloc")]
 impl<I, T> ExtractContext<I, VerboseError<T>> for VerboseError<I>
 where
     T: RecreateContext<I>,

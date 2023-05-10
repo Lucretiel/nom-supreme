@@ -4,7 +4,10 @@
 //! arbitrary types of data to be attached as context to errors, rather than
 //! requiring `&'static str`.
 
-use nom::error::{Error, ErrorKind, VerboseError, VerboseErrorKind};
+use nom::error::{Error, ErrorKind};
+
+#[cfg(feature = "alloc")]
+use nom::error::{VerboseError, VerboseErrorKind};
 
 /// Updated version of [`nom::error::ContextError`]. Allows for arbitrary
 /// context types, rather than requiring `&'static str`
@@ -32,6 +35,7 @@ impl<I, C> ContextError<I, C> for Error<I> {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl<I> ContextError<I, &'static str> for VerboseError<I> {
     fn add_context(location: I, ctx: &'static str, mut other: Self) -> Self {
         other

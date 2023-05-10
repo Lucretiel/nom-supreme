@@ -2,23 +2,15 @@
 //! information about parse failures than the built-in nom error types.
 //! Requires the `error` feature to be enabled.
 
-use std::{
-    error::Error,
-    fmt::{self, Debug, Display, Formatter, Write},
-};
+#[cfg(feature = "alloc")]
+extern crate alloc;
 
-use indent_write::fmt::IndentWriter;
-use joinery::JoinableIterator;
-use nom::{
-    error::{ErrorKind as NomErrorKind, FromExternalError, ParseError},
-    ErrorConvert, InputLength,
-};
+use core::fmt::{self, Debug, Display, Formatter};
 
-use crate::{
-    context::ContextError,
-    final_parser::{ExtractContext, RecreateContext},
-    tag::TagError,
-};
+#[cfg(feature = "alloc")]
+use alloc::{boxed::Box, vec::Vec};
+
+use nom::error::ErrorKind as NomErrorKind;
 
 /// Enum for generic things that can be expected by nom parsers
 ///
@@ -127,12 +119,12 @@ pub enum BaseErrorKind<T, E> {
 
 impl<T: Debug, E: Display> Display for BaseErrorKind<T, E> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        use indent_write::indentable::Indentable as _;
+
         match *self {
             BaseErrorKind::Expected(ref expectation) => write!(f, "expected {}", expectation),
             BaseErrorKind::External(ref err) => {
-                writeln!(f, "external error:")?;
-                let mut f = IndentWriter::new("  ", f);
-                write!(f, "{}", err)
+                write!(f, "external error:\n{}", err.indented("  "))
             }
             BaseErrorKind::Kind(kind) => write!(f, "error in {:?}", kind),
         }
@@ -374,8 +366,13 @@ impl<C: Debug> Display for StackContext<C> {
 /// [`ErrorTree::Stack`]: GenericErrorTree::Stack
 /// [`Stack`]: GenericErrorTree::Stack
 /// [`VerboseError`]: nom::error::VerboseError
-pub type ErrorTree<I> =
-    GenericErrorTree<I, &'static str, &'static str, Box<dyn Error + Send + Sync + 'static>>;
+#[cfg(feature = "std")]
+pub type ErrorTree<I> = GenericErrorTree<
+    I,
+    &'static str,
+    &'static str,
+    Box<dyn std::error::Error + Send + Sync + 'static>,
+>;
 
 /// Generic version of [`ErrorTree`], which allows for arbitrary `Tag`, `Context`,
 /// and `ExternalError` types. See [`ErrorTree`] for more extensive docs and
@@ -386,10 +383,11 @@ pub type ErrorTree<I> =
 ///   interoperate with nom's [`context`][nom::error::context] combinator.
 ///   `nom-supreme` provides a more generic [`.context`][crate::ParserExt::context]
 ///   combinator that allows for any kind of context to be attached to an error.
-/// - `Error` can usually be nothing, as it's unusual for nom parsers to
-///   require external errors. `Box<dyn Error + Send + Sync + 'static>` is
-///   a common catch-all.
+/// - `Error` can usually be [`Infallible`](std::convert::Infallible) or `()`,
+///   as it's unusual for nom parsers to require external errors.
+///   `Box<dyn Error + Send + Sync + 'static>` is a common catch-all.
 #[derive(Debug)]
+#[cfg(feature = "alloc")]
 pub enum GenericErrorTree<Location, Tag, Context, ExternalError> {
     /// A specific error event at a specific location. Often this will indicate
     /// that something like a tag or character was expected at that location.
@@ -423,6 +421,7 @@ pub enum GenericErrorTree<Location, Tag, Context, ExternalError> {
     //   (Context or Kind)
 }
 
+#[cfg(feature = "alloc")]
 impl<I, T, C, E> GenericErrorTree<I, T, C, E> {
     /// Helper for `map_locations`. Because it operates recursively, this
     /// method uses an `&mut impl FnMut`, which can be reborrowed.
@@ -468,8 +467,12 @@ impl<I, T, C, E> GenericErrorTree<I, T, C, E> {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl<I: Display, T: Debug, C: Debug, E: Display> Display for GenericErrorTree<I, T, C, E> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        use indent_write::indentable::Indentable as _;
+        use joinery::JoinableIterator as _;
+
         match self {
             GenericErrorTree::Base { location, kind } => write!(f, "{} at {:#}", kind, location),
             GenericErrorTree::Stack { contexts, base } => {
@@ -477,23 +480,27 @@ impl<I: Display, T: Debug, C: Debug, E: Display> Display for GenericErrorTree<I,
                     writeln!(f, "{} at {:#},", context, location)
                 })?;
 
-                base.fmt(f)
+                write!(f, "{}", base)
             }
             GenericErrorTree::Alt(siblings) => {
-                writeln!(f, "one of:")?;
-                let mut f = IndentWriter::new("  ", f);
-                write!(f, "{}", siblings.iter().join_with(", or\n"))
+                write!(
+                    f,
+                    "one of:\n{}",
+                    siblings.iter().join_with(", or\n").indented("  ")
+                )
             }
         }
     }
 }
 
-impl<I: Display + Debug, T: Debug, C: Debug, E: Display + Debug> Error
+#[cfg(feature = "std")]
+impl<I: Display + Debug, T: Debug, C: Debug, E: Display + Debug> std::error::Error
     for GenericErrorTree<I, T, C, E>
 {
 }
 
-impl<I: InputLength, T, C, E> ParseError<I> for GenericErrorTree<I, T, C, E> {
+#[cfg(feature = "alloc")]
+impl<I: nom::InputLength, T, C, E> nom::error::ParseError<I> for GenericErrorTree<I, T, C, E> {
     /// Create a new error at the given position. Interpret `kind` as an
     /// [`Expectation`] if possible, to give a more informative error message.
     fn from_error_kind(location: I, kind: NomErrorKind) -> Self {
@@ -548,7 +555,7 @@ impl<I: InputLength, T, C, E> ParseError<I> for GenericErrorTree<I, T, C, E> {
             // This isn't a stack; create a new stack
             base => GenericErrorTree::Stack {
                 base: Box::new(base),
-                contexts: vec![context],
+                contexts: Vec::from([context]),
             },
         }
     }
@@ -578,14 +585,15 @@ impl<I: InputLength, T, C, E> ParseError<I> for GenericErrorTree<I, T, C, E> {
             (GenericErrorTree::Alt(siblings), err) | (err, GenericErrorTree::Alt(siblings)) => {
                 express!(siblings.push(err))
             }
-            (err1, err2) => vec![err1, err2],
+            (err1, err2) => Vec::from([err1, err2]),
         };
 
         GenericErrorTree::Alt(siblings)
     }
 }
 
-impl<I, T, C, E> ContextError<I, C> for GenericErrorTree<I, T, C, E> {
+#[cfg(feature = "alloc")]
+impl<I, T, C, E> crate::context::ContextError<I, C> for GenericErrorTree<I, T, C, E> {
     fn add_context(location: I, ctx: C, other: Self) -> Self {
         let context = (location, StackContext::Context(ctx));
 
@@ -599,19 +607,21 @@ impl<I, T, C, E> ContextError<I, C> for GenericErrorTree<I, T, C, E> {
             // This isn't a stack, create a new stack
             base => GenericErrorTree::Stack {
                 base: Box::new(base),
-                contexts: vec![context],
+                contexts: Vec::from([context]),
             },
         }
     }
 }
 
+#[cfg(feature = "alloc")]
 impl<I, T, E> nom::error::ContextError<I> for GenericErrorTree<I, T, &'static str, E> {
     fn add_context(location: I, ctx: &'static str, other: Self) -> Self {
-        ContextError::add_context(location, ctx, other)
+        crate::context::ContextError::add_context(location, ctx, other)
     }
 }
 
-impl<I, T, C, E, E2> FromExternalError<I, E2> for GenericErrorTree<I, T, C, E>
+#[cfg(feature = "alloc")]
+impl<I, T, C, E, E2> nom::error::FromExternalError<I, E2> for GenericErrorTree<I, T, C, E>
 where
     E: From<E2>,
 {
@@ -624,7 +634,8 @@ where
     }
 }
 
-impl<I, T: AsRef<[u8]>, C, E> TagError<I, T> for GenericErrorTree<I, T, C, E> {
+#[cfg(feature = "alloc")]
+impl<I, T: AsRef<[u8]>, C, E> crate::tag::TagError<I, T> for GenericErrorTree<I, T, C, E> {
     fn from_tag(location: I, tag: T) -> Self {
         GenericErrorTree::Base {
             location,
@@ -636,7 +647,8 @@ impl<I, T: AsRef<[u8]>, C, E> TagError<I, T> for GenericErrorTree<I, T, C, E> {
     }
 }
 
-impl<I, T, C, E> ErrorConvert<GenericErrorTree<(I, usize), T, C, E>>
+#[cfg(feature = "alloc")]
+impl<I, T, C, E> nom::ErrorConvert<GenericErrorTree<(I, usize), T, C, E>>
     for GenericErrorTree<I, T, C, E>
 {
     fn convert(self) -> GenericErrorTree<(I, usize), T, C, E> {
@@ -644,7 +656,8 @@ impl<I, T, C, E> ErrorConvert<GenericErrorTree<(I, usize), T, C, E>>
     }
 }
 
-impl<I, T, C, E> ErrorConvert<GenericErrorTree<I, T, C, E>>
+#[cfg(feature = "alloc")]
+impl<I, T, C, E> nom::ErrorConvert<GenericErrorTree<I, T, C, E>>
     for GenericErrorTree<(I, usize), T, C, E>
 {
     fn convert(self) -> GenericErrorTree<I, T, C, E> {
@@ -652,11 +665,12 @@ impl<I, T, C, E> ErrorConvert<GenericErrorTree<I, T, C, E>>
     }
 }
 
-impl<I, I2, T, C, E> ExtractContext<I, GenericErrorTree<I2, T, C, E>>
+#[cfg(feature = "alloc")]
+impl<I, I2, T, C, E> crate::final_parser::ExtractContext<I, GenericErrorTree<I2, T, C, E>>
     for GenericErrorTree<I, T, C, E>
 where
     I: Clone,
-    I2: RecreateContext<I>,
+    I2: crate::final_parser::RecreateContext<I>,
 {
     fn extract_context(self, original_input: I) -> GenericErrorTree<I2, T, C, E> {
         self.map_locations(move |location| I2::recreate_context(original_input.clone(), location))
@@ -664,14 +678,15 @@ where
 }
 
 #[cfg(test)]
+#[cfg(feature = "alloc")]
 mod tests {
-    use super::*;
-
     use nom::{
         bits::{bits, complete::take},
         sequence::tuple,
         IResult, Parser,
     };
+
+    use super::ErrorTree;
 
     type BitInput<'a> = (&'a [u8], usize);
 

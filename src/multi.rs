@@ -47,7 +47,7 @@ use core::{convert::Infallible, iter};
 use nom::{
     error::{ErrorKind::SeparatedNonEmptyList, FromExternalError, ParseError},
     Err::Error,
-    InputLength, Parser,
+    Parser,
 };
 
 /**
@@ -116,7 +116,7 @@ pub fn collect_separated_terminated<
     terminator: impl Parser<Input, TermOutput, ParseErr>,
 ) -> impl Parser<Input, Collection, ParseErr>
 where
-    Input: Clone + InputLength,
+    Input: Clone + Eq,
     ParseErr: ParseError<Input>,
     Collection: Default + Extend<ParseOutput>,
 {
@@ -151,7 +151,7 @@ pub fn parse_separated_terminated<Input, ParseOutput, SepOutput, TermOutput, Par
     mut fold: impl FnMut(Accum, ParseOutput) -> Accum,
 ) -> impl Parser<Input, Accum, ParseErr>
 where
-    Input: Clone + InputLength,
+    Input: Clone + Eq,
     ParseErr: ParseError<Input>,
 {
     parse_separated_terminated_impl(
@@ -190,7 +190,7 @@ pub fn parse_separated_terminated_res<
     fold: impl FnMut(Accum, ParseOutput) -> Result<Accum, FoldErr>,
 ) -> impl Parser<Input, Accum, ParseErr>
 where
-    Input: Clone + InputLength,
+    Input: Clone + Eq,
     ParseErr: ParseError<Input> + FromExternalError<Input, FoldErr>,
 {
     parse_separated_terminated_impl(parser, separator, terminator, init, fold, |input, err| {
@@ -223,6 +223,7 @@ impl<E> ZeroLengthParseState<E> {
 /// Shared implementation for parse_separated_terminated_res and
 /// parse_separated_terminated. This exists so that we don't have to have an
 /// unnecessary bound of FromExternalError on parse_separated_terminated.
+// Inline: silly? This function does naught but return a closure, so not really.
 #[inline]
 fn parse_separated_terminated_impl<
     Input,
@@ -243,7 +244,7 @@ fn parse_separated_terminated_impl<
     mut build_error: impl FnMut(Input, FoldErr) -> ParseErr,
 ) -> impl Parser<Input, Accum, ParseErr>
 where
-    Input: Clone + InputLength,
+    Input: Clone + Eq,
     ParseErr: ParseError<Input>,
 {
     move |mut input: Input| {
@@ -272,7 +273,7 @@ where
             };
 
             // Check zero-length matches
-            zero_length_state = match (input.input_len() == tail.input_len(), zero_length_state) {
+            zero_length_state = match (input == tail, zero_length_state) {
                 // If both the item and the separator had a zero length match,
                 // we're hanging. Bail.
                 //
@@ -323,7 +324,7 @@ where
             };
 
             // Check zero-length matches
-            zero_length_state = match (input.input_len() == tail.input_len(), zero_length_state) {
+            zero_length_state = match (input == tail, zero_length_state) {
                 // If both the separator and the item had a zero length match,
                 // we're hanging. Bail.
                 (true, ZeroLengthParseState::Item) => {
@@ -351,6 +352,11 @@ where
 
 #[cfg(test)]
 mod test_separated_terminated {
+    extern crate alloc;
+
+    use alloc::vec;
+    use alloc::vec::Vec;
+
     use cool_asserts::assert_matches;
     use nom::{
         branch::alt,
@@ -418,7 +424,7 @@ mod test_separated_terminated {
 
         let choices = assert_matches!(err, Err::Error(ErrorTree::Alt(choices)) => choices);
         assert_matches!(
-            choices.as_slice(),
+            choices,
             [
                 ErrorTree::Base {
                     location: "30.",
@@ -439,7 +445,7 @@ mod test_separated_terminated {
 
         let choices = assert_matches!(err, Err::Error(ErrorTree::Alt(choices)) => choices);
         assert_matches!(
-            choices.as_slice(),
+            choices,
             [
                 ErrorTree::Base {
                     location: "",
@@ -499,7 +505,7 @@ mod test_separated_terminated {
 
         let choices = assert_matches!(err, Err::Error(ErrorTree::Alt(choices)) => choices);
         assert_matches!(
-            choices.as_slice(),
+            choices,
             [
                 ErrorTree::Base {
                     location: "abc.;",

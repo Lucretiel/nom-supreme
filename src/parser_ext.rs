@@ -434,8 +434,8 @@ pub trait ParserExt<I, O, E>: Parser<I, O, E> + Sized {
     ///     Err(Err::Error(Error{input: "abc", code: ErrorKind::Verify}))
     /// );
     /// assert_eq!(
-    ///     parser.parse("abcabcabc"),
-    ///     Err(Err::Error(Error{input: "abcabcabc", code: ErrorKind::Verify}))
+    ///     parser.parse("Fabulous"),
+    ///     Err(Err::Error(Error{input: "Fabulous", code: ErrorKind::Verify}))
     /// );
     /// assert_eq!(
     ///     parser.parse("123"),

@@ -113,9 +113,21 @@ impl Location {
     /// associated with the input
     pub fn locate_tail<'a>(original_input: &'a str, tail: &'a str) -> Self {
         let offset = original_input.offset(tail);
-        let input_bytes = original_input.as_bytes();
-        let prefix = &input_bytes[..offset];
+        Self::locate_end(&original_input.as_bytes()[..offset])
+    }
 
+    /// Given the *original* input bytes, as well as the context reported by
+    /// nom, compute the location in the original bytes string where the error
+    /// occurred.
+    ///
+    /// This function will report garbage (and may panic) if the context is not
+    /// associated with the input
+    pub fn locate_tail_bytes<'a>(original_input: &'a [u8], tail: &'a [u8]) -> Self {
+        Self::locate_end(&original_input[..original_input.offset(tail)])
+    }
+
+    /// Find the location of the end of the passed byte string.
+    fn locate_end(prefix: &[u8]) -> Self {
         let line_number = memchr::memchr_iter(b'\n', prefix).count() + 1;
 
         let last_line_start = memchr::memrchr(b'\n', prefix).map(|i| i + 1).unwrap_or(0);
@@ -142,6 +154,12 @@ impl Display for Location {
 impl RecreateContext<&str> for Location {
     fn recreate_context(original_input: &str, tail: &str) -> Self {
         Location::locate_tail(original_input, tail)
+    }
+}
+
+impl RecreateContext<&[u8]> for Location {
+    fn recreate_context(original_input: &[u8], tail: &[u8]) -> Self {
+        Location::locate_tail_bytes(original_input, tail)
     }
 }
 
